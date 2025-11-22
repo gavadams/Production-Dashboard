@@ -95,8 +95,8 @@ export async function insertProductionRun(data: {
     const teamIdentifier = data.team_identifier || `${data.press}_${shiftValue}_${teamValue}`;
 
     // Build insert object - include team_identifier to ensure proper grouping
-    // If team_identifier column doesn't exist in schema, this will fail at runtime
-    // and we'll know to add the column via migration
+    // Note: team_identifier might be a generated column, so we'll try with it first
+    // and fall back if needed
     const insertPayload: Record<string, unknown> = {
       press: data.press,
       date: postgresDate, // Convert to YYYY-MM-DD format
@@ -115,8 +115,15 @@ export async function insertProductionRun(data: {
       logged_downtime_minutes: data.logged_downtime_minutes ?? 0,
       shift: shiftValue,
       team: teamValue,
-      team_identifier: teamIdentifier, // Include to ensure proper grouping by press+shift+team
     };
+    
+    // Only include team_identifier if it's not a generated column
+    // The error "cannot insert a non-DEFAULT value" suggests it might be generated
+    // Try without it first, or only include if we know it's not generated
+    // For now, we'll try with it and fall back if needed
+    if (teamIdentifier && teamIdentifier !== `${data.press}_Unknown_Unknown`) {
+      insertPayload.team_identifier = teamIdentifier;
+    }
 
     // Try inserting with team_identifier first
     let { data: insertedData, error } = await supabase
@@ -125,9 +132,9 @@ export async function insertProductionRun(data: {
       .select("id")
       .single();
 
-    // If error is due to missing team_identifier column, try without it
-    if (error && (error.message.includes("team_identifier") || error.code === "42703")) {
-      console.warn("team_identifier column not found, inserting without it:", error.message);
+    // If error is due to team_identifier column (missing, generated, or constraint issue), try without it
+    if (error && (error.message.includes("team_identifier") || error.code === "42703" || error.code === "42804")) {
+      console.warn("team_identifier column issue, inserting without it:", error.message);
       // Remove team_identifier from payload and try again
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { team_identifier: _, ...payloadWithoutTeamId } = insertPayload;

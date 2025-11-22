@@ -260,11 +260,24 @@ export function parseShiftSummary(
   });
 
   // Extract shift rows (starting after the header row)
+  // Stop when we encounter work order data (numeric value in column A or "Works Order" header)
   const shifts: ShiftSummary[] = [];
   const dataStartRow = headerRowIndex + 1;
 
   for (let i = dataStartRow; i < excelData.length; i++) {
     const row = excelData[i];
+
+    // Check if we've hit the work orders section
+    // Look for "Works Order" header or numeric value in column A (work order number)
+    const colA = row["A"];
+    if (colA !== null && colA !== undefined) {
+      const colAStr = String(colA).trim().toLowerCase();
+      // If column A contains "works order" or is a numeric value, we've hit work order data
+      if (colAStr.includes("works order") || colAStr.includes("work order") || /^\d+$/.test(colAStr)) {
+        // Stop parsing shifts - we've reached the work orders section
+        break;
+      }
+    }
 
     // Check if this is an empty row
     const rowValues = Object.values(row).filter(
@@ -310,6 +323,24 @@ export function parseShiftSummary(
             // Take only the first character if it's a letter
             if (strValue.length > 1 && /^[A-Za-z]/.test(strValue)) {
               strValue = strValue.charAt(0).toUpperCase();
+            }
+            // Validate team is A, B, or C - if not, log warning but keep value
+            if (!["A", "B", "C"].includes(strValue)) {
+              console.warn(`Unexpected team value: "${strValue}". Expected A, B, or C. Row:`, row);
+            }
+          }
+          
+          // For shift field, validate it's a valid shift name
+          if (field === "shift") {
+            const validShifts = ["Earlies", "Lates", "Nights"];
+            if (!validShifts.some(vs => strValue.toLowerCase().includes(vs.toLowerCase()))) {
+              // If this doesn't look like a shift name, it might be work order data
+              // Check if column A has a numeric value (work order number)
+              const colA = row["A"];
+              if (colA !== null && colA !== undefined && /^\d+$/.test(String(colA).trim())) {
+                // This is work order data, not shift data - stop parsing
+                break;
+              }
             }
           }
           
@@ -381,6 +412,8 @@ export function parseWorkOrders(
       }
 
       // Start new work order
+      // Note: We allow duplicate work order numbers because the same work order
+      // can appear in different shifts/teams and should be tracked separately
       currentWorkOrder = {
         work_order_number: workOrderNumber,
         good_production: parseNumericValue(colB),
@@ -390,6 +423,7 @@ export function parseWorkOrders(
         production: { start_time: null, end_time: null },
       };
       currentWorkOrderStartRow = i;
+      console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
     } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
       // We're in a work order section, look for Make Ready and Production rows
       const colFValue = colF !== null && colF !== undefined ? String(colF).trim() : "";
