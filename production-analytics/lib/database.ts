@@ -313,7 +313,7 @@ export async function checkExistingUpload(
  */
 export async function saveProductionData(
   report: ProductionReport,
-  uploadHistoryId: number
+  uploadHistoryId: string
 ): Promise<SaveProductionDataResult> {
   const result: SaveProductionDataResult = {
     success: true,
