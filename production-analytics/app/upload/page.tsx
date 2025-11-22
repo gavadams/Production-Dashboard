@@ -3,75 +3,11 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, X, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { validateFileName, getValidPressCodes } from "@/lib/fileValidation";
 
 interface FileWithValidation extends File {
   isValid?: boolean;
   validationError?: string;
-}
-
-const VALID_PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
-
-// Validate filename pattern: {PRESS}_{DD-MMM-YYYY}.xlsx
-function validateFileName(fileName: string): { isValid: boolean; error?: string } {
-  // Check if file is .xlsx
-  if (!fileName.toLowerCase().endsWith(".xlsx")) {
-    return { isValid: false, error: "File must be a .xlsx file" };
-  }
-
-  // Remove .xlsx extension
-  const nameWithoutExt = fileName.replace(/\.xlsx$/i, "");
-
-  // Check pattern: {PRESS}_{DD-MMM-YYYY}
-  const pattern = /^([A-Z0-9]+)_(\d{2}-[A-Z]{3}-\d{4})$/;
-  const match = nameWithoutExt.match(pattern);
-
-  if (!match) {
-    return {
-      isValid: false,
-      error: "Filename must match pattern: {PRESS}_{DD-MMM-YYYY}.xlsx (e.g., LA01_15-Jan-2024.xlsx)",
-    };
-  }
-
-  const pressCode = match[1];
-  const dateStr = match[2];
-
-  // Validate press code
-  if (!VALID_PRESS_CODES.includes(pressCode)) {
-    return {
-      isValid: false,
-      error: `Press code must be one of: ${VALID_PRESS_CODES.join(", ")}`,
-    };
-  }
-
-  // Validate date format (DD-MMM-YYYY)
-  try {
-    // Parse the date string (DD-MMM-YYYY)
-    const [day, month, year] = dateStr.split("-");
-    const monthMap: Record<string, string> = {
-      Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
-      Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
-    };
-    
-    if (!monthMap[month]) {
-      return { isValid: false, error: "Invalid month. Use 3-letter month abbreviation (e.g., Jan, Feb, Mar)" };
-    }
-    
-    const date = new Date(`${year}-${monthMap[month]}-${day}`);
-    if (isNaN(date.getTime())) {
-      return { isValid: false, error: "Invalid date. Please check the day and year values." };
-    }
-    
-    // Verify the date matches the input (to catch invalid dates like 32-Jan-2024)
-    const formattedDate = format(date, "dd-MMM-yyyy");
-    if (formattedDate !== dateStr) {
-      return { isValid: false, error: "Invalid date. Please check the date values." };
-    }
-  } catch {
-    return { isValid: false, error: "Invalid date format. Use DD-MMM-YYYY (e.g., 15-Jan-2024)" };
-  }
-
-  return { isValid: true };
 }
 
 function formatFileSize(bytes: number): string {
@@ -135,11 +71,14 @@ export default function UploadPage() {
         <p className="text-gray-600 dark:text-gray-400">
           Upload production data files. Files must match the pattern:{" "}
           <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-sm">
-            {"{PRESS}_{DD-MMM-YYYY}.xlsx"}
+            {"857{PRESS}_{DD-MMM-YYYY}.xlsx"}
           </code>
         </p>
         <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
-          Valid press codes: {VALID_PRESS_CODES.join(", ")}
+          Valid press codes: {getValidPressCodes().join(", ")}
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+          Example: <code className="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">857LP05_06-Nov-2025.xlsx</code>
         </p>
       </div>
 

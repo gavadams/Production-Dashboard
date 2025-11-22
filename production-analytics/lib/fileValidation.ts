@@ -8,16 +8,16 @@ export interface FileValidationResult {
 }
 
 /**
- * Validates filename pattern: {PRESS}_{DD-MMM-YYYY}.xlsx
+ * Validates filename pattern: 857{PRESS}_{DD-MMM-YYYY}.xlsx
  * Extracts press name and date from filename
  * Converts date from DD-MMM-YYYY to DD-MM-YYYY format
  * 
- * @param fileName - The filename to validate (e.g., "LP05_14-Nov-2025.xlsx")
+ * @param fileName - The filename to validate (e.g., "857LP05_06-Nov-2025.xlsx")
  * @returns FileValidationResult with validation status, extracted data, or error message
  * 
  * @example
- * validateFileName("LP05_14-Nov-2025.xlsx")
- * // Returns: { isValid: true, press: "LP05", date: "14-11-2025" }
+ * validateFileName("857LP05_06-Nov-2025.xlsx")
+ * // Returns: { isValid: true, press: "LP05", date: "06-11-2025" }
  */
 export function validateFileName(fileName: string): FileValidationResult {
   // Check if file is .xlsx
@@ -31,14 +31,14 @@ export function validateFileName(fileName: string): FileValidationResult {
   // Remove .xlsx extension
   const nameWithoutExt = fileName.replace(/\.xlsx$/i, "");
 
-  // Check pattern: {PRESS}_{DD-MMM-YYYY}
-  const pattern = /^([A-Z0-9]+)_(\d{2}-[A-Z]{3}-\d{4})$/;
+  // Check pattern: 857{PRESS}_{DD-MMM-YYYY}
+  const pattern = /^857([A-Z0-9]+)_(\d{2}-[A-Z]{3}-\d{4})$/;
   const match = nameWithoutExt.match(pattern);
 
   if (!match) {
     return {
       isValid: false,
-      error: "Filename must match pattern: {PRESS}_{DD-MMM-YYYY}.xlsx (e.g., LA01_15-Jan-2024.xlsx)",
+      error: "Filename must match pattern: 857{PRESS}_{DD-MMM-YYYY}.xlsx (e.g., 857LP05_06-Nov-2025.xlsx)",
     };
   }
 
