@@ -114,9 +114,7 @@ export default function DashboardPage() {
 
       setPressData(Array.from(dataMap.values()));
 
-      // Fetch top downtime issues
-      const dateParts = selectedDate.split("-");
-      const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+      // Fetch top downtime issues (formattedDate already defined above)
       const issues = await getTopDowntimeIssues(formattedDate, 5);
       setTopIssues(issues);
     } catch (err) {
