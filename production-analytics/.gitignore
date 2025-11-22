@@ -34,3 +34,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# example files
+
+857LP05_06-Nov-2025.xlsx
+857LP05_14-Nov-2025.xlsx
