@@ -756,3 +756,262 @@ export async function getTopDowntimeIssues(
   }
 }
 
+export interface TeamPerformanceData {
+  press: string;
+  shift: string;
+  team: string;
+  team_identifier: string;
+  total_runs: number;
+  total_production: number;
+  avg_run_speed: number;
+  avg_make_ready_minutes: number;
+  avg_spoilage_pct: number;
+}
+
+/**
+ * Gets team performance data with optional filters
+ * Queries production_runs table and groups by team_identifier
+ * 
+ * @param filters - Filter options for the query
+ * @returns Array of TeamPerformanceData objects, ordered by avg_run_speed DESC
+ * 
+ * @example
+ * const teams = await getTeamPerformance({
+ *   press: "LP05",
+ *   shift: "Earlies",
+ *   startDate: "2025-11-01",
+ *   endDate: "2025-11-30"
+ * });
+ */
+export async function getTeamPerformance(filters: {
+  press?: string;
+  shift?: string;
+  startDate: string; // YYYY-MM-DD format
+  endDate: string; // YYYY-MM-DD format
+}): Promise<TeamPerformanceData[]> {
+  try {
+    let query = supabase
+      .from("production_runs")
+      .select("press, shift, team, team_identifier, calculated_run_speed, make_ready_minutes, spoilage_percentage, good_production")
+      .gte("date", filters.startDate)
+      .lte("date", filters.endDate);
+
+    // Apply filters
+    if (filters.press) {
+      query = query.eq("press", filters.press);
+    }
+
+    if (filters.shift) {
+      query = query.eq("shift", filters.shift);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching team performance:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Group by team_identifier and calculate aggregations
+    const teamMap = new Map<string, {
+      press: string;
+      shift: string;
+      team: string;
+      team_identifier: string;
+      runs: number;
+      total_production: number;
+      run_speeds: number[];
+      make_ready_minutes: number[];
+      spoilage_percentages: number[];
+    }>();
+
+    data.forEach((record) => {
+      const teamId = record.team_identifier || `${record.press}_${record.shift}_${record.team}`;
+      
+      if (!teamMap.has(teamId)) {
+        teamMap.set(teamId, {
+          press: record.press,
+          shift: record.shift,
+          team: record.team,
+          team_identifier: teamId,
+          runs: 0,
+          total_production: 0,
+          run_speeds: [],
+          make_ready_minutes: [],
+          spoilage_percentages: [],
+        });
+      }
+
+      const teamData = teamMap.get(teamId)!;
+      teamData.runs += 1;
+      teamData.total_production += record.good_production || 0;
+
+      if (record.calculated_run_speed && record.calculated_run_speed > 0) {
+        teamData.run_speeds.push(record.calculated_run_speed);
+      }
+
+      if (record.make_ready_minutes !== null && record.make_ready_minutes !== undefined) {
+        teamData.make_ready_minutes.push(record.make_ready_minutes);
+      }
+
+      if (record.spoilage_percentage !== null && record.spoilage_percentage !== undefined) {
+        teamData.spoilage_percentages.push(record.spoilage_percentage);
+      }
+    });
+
+    // Calculate averages and create result array
+    const results: TeamPerformanceData[] = Array.from(teamMap.values()).map((teamData) => {
+      const avg_run_speed =
+        teamData.run_speeds.length > 0
+          ? teamData.run_speeds.reduce((sum, speed) => sum + speed, 0) / teamData.run_speeds.length
+          : 0;
+
+      const avg_make_ready_minutes =
+        teamData.make_ready_minutes.length > 0
+          ? teamData.make_ready_minutes.reduce((sum, minutes) => sum + minutes, 0) / teamData.make_ready_minutes.length
+          : 0;
+
+      const avg_spoilage_pct =
+        teamData.spoilage_percentages.length > 0
+          ? teamData.spoilage_percentages.reduce((sum, pct) => sum + pct, 0) / teamData.spoilage_percentages.length
+          : 0;
+
+      return {
+        press: teamData.press,
+        shift: teamData.shift,
+        team: teamData.team,
+        team_identifier: teamData.team_identifier,
+        total_runs: teamData.runs,
+        total_production: teamData.total_production,
+        avg_run_speed,
+        avg_make_ready_minutes,
+        avg_spoilage_pct,
+      };
+    });
+
+    // Sort by avg_run_speed DESC
+    results.sort((a, b) => b.avg_run_speed - a.avg_run_speed);
+
+    return results;
+  } catch (error) {
+    console.error("Exception fetching team performance:", error);
+    return [];
+  }
+}
+
+export interface TeamTrainingNeed {
+  team_identifier: string;
+  press: string;
+  shift: string;
+  team: string;
+  issue_type: string;
+  issue_category: string;
+  occurrence_count: number;
+  total_impact: number;
+  avg_impact: number;
+}
+
+/**
+ * Gets team training needs using the Supabase RPC function
+ * Identifies teams with repeated spoilage or downtime issues
+ * 
+ * @param daysLookback - Number of days to look back (default: 30)
+ * @param minOccurrences - Minimum occurrences to flag (default: 3)
+ * @returns Array of TeamTrainingNeed objects
+ * 
+ * @example
+ * const trainingNeeds = await getTeamTrainingNeeds(30, 3);
+ * trainingNeeds.forEach(need => {
+ *   console.log(`${need.team_identifier}: ${need.issue_category}`);
+ * });
+ */
+export async function getTeamTrainingNeeds(
+  daysLookback: number = 30,
+  minOccurrences: number = 3
+): Promise<TeamTrainingNeed[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_team_training_needs", {
+      days_lookback: daysLookback,
+      min_occurrences: minOccurrences,
+    });
+
+    if (error) {
+      console.error("Error fetching team training needs:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    return data.map((record) => ({
+      team_identifier: record.team_identifier || "",
+      press: record.press || "",
+      shift: record.shift || "",
+      team: record.team || "",
+      issue_type: record.issue_type || "",
+      issue_category: record.issue_category || "",
+      occurrence_count: record.occurrence_count || 0,
+      total_impact: record.total_impact || 0,
+      avg_impact: record.avg_impact || 0,
+    }));
+  } catch (error) {
+    console.error("Exception fetching team training needs:", error);
+    return [];
+  }
+}
+
+/**
+ * Gets recommended training based on issue category
+ * 
+ * @param category - Issue category name
+ * @returns Recommended training string
+ */
+export function getTrainingRecommendation(category: string): string {
+  const categoryLower = category.toLowerCase();
+  
+  // Mapping of categories to training recommendations
+  const trainingMap: Record<string, string> = {
+    "camera faults": "Camera calibration and troubleshooting training",
+    "camera": "Camera calibration and troubleshooting training",
+    "damaged edges": "Material handling and quality control training",
+    "damaged edges/bent corner": "Material handling and quality control training",
+    "bent corner": "Material handling and quality control training",
+    "pimples": "Cylinder maintenance and cleaning procedures",
+    "blanket change": "Blanket replacement and maintenance training",
+    "blanket / packing change": "Blanket replacement and maintenance training",
+    "changing bulks": "Bulk change procedures and efficiency training",
+    "coating": "Coating application and quality control training",
+    "coating drips": "Coating application and quality control training",
+    "varnish": "Varnish application and maintenance training",
+    "varnish fail": "Varnish troubleshooting and maintenance training",
+    "mechanical breakdown": "Mechanical troubleshooting and preventive maintenance",
+    "repro error": "Repro and plate preparation training",
+    "repro error / plates": "Repro and plate preparation training",
+    "start up": "Startup procedures and efficiency training",
+    "setting up": "Setup procedures and efficiency training",
+    "crash at feeder": "Feeder operation and troubleshooting training",
+    "impression cylinder wash": "Cylinder maintenance and cleaning procedures",
+    "grippers": "Gripper maintenance and adjustment training",
+  };
+
+  // Try exact match first
+  if (trainingMap[categoryLower]) {
+    return trainingMap[categoryLower];
+  }
+
+  // Try partial matches
+  for (const [key, value] of Object.entries(trainingMap)) {
+    if (categoryLower.includes(key) || key.includes(categoryLower)) {
+      return value;
+    }
+  }
+
+  // Default recommendation
+  return `Training on ${category} prevention and troubleshooting`;
+}
+
