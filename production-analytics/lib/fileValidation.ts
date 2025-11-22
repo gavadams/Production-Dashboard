@@ -32,7 +32,8 @@ export function validateFileName(fileName: string): FileValidationResult {
   const nameWithoutExt = fileName.replace(/\.xlsx$/i, "");
 
   // Check pattern: 857{PRESS}_{DD-MMM-YYYY}
-  const pattern = /^857([A-Z0-9]+)_(\d{2}-[A-Z]{3}-\d{4})$/;
+  // Note: Month abbreviation can be any case (Nov, NOV, nov)
+  const pattern = /^857([A-Z0-9]+)_(\d{2}-[A-Za-z]{3}-\d{4})$/i;
   const match = nameWithoutExt.match(pattern);
 
   if (!match) {
@@ -82,23 +83,23 @@ function parseDate(dateStr: string): { isValid: boolean; date?: string; error?: 
     // Split the date string (DD-MMM-YYYY)
     const [day, monthAbbr, year] = dateStr.split("-");
 
-    // Map month abbreviations to numbers
+    // Map month abbreviations to numbers (case-insensitive)
     const monthMap: Record<string, string> = {
-      Jan: "01",
-      Feb: "02",
-      Mar: "03",
-      Apr: "04",
-      May: "05",
-      Jun: "06",
-      Jul: "07",
-      Aug: "08",
-      Sep: "09",
-      Oct: "10",
-      Nov: "11",
-      Dec: "12",
+      jan: "01",
+      feb: "02",
+      mar: "03",
+      apr: "04",
+      may: "05",
+      jun: "06",
+      jul: "07",
+      aug: "08",
+      sep: "09",
+      oct: "10",
+      nov: "11",
+      dec: "12",
     };
 
-    const monthNum = monthMap[monthAbbr];
+    const monthNum = monthMap[monthAbbr.toLowerCase()];
     if (!monthNum) {
       return {
         isValid: false,
