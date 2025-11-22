@@ -118,11 +118,27 @@ export async function insertProductionRun(data: {
       team_identifier: teamIdentifier, // Include to ensure proper grouping by press+shift+team
     };
 
-    const { data: insertedData, error } = await supabase
+    // Try inserting with team_identifier first
+    let { data: insertedData, error } = await supabase
       .from("production_runs")
       .insert(insertPayload)
       .select("id")
       .single();
+
+    // If error is due to missing team_identifier column, try without it
+    if (error && (error.message.includes("team_identifier") || error.code === "42703")) {
+      console.warn("team_identifier column not found, inserting without it:", error.message);
+      // Remove team_identifier from payload and try again
+      const { team_identifier, ...payloadWithoutTeamId } = insertPayload;
+      const retryResult = await supabase
+        .from("production_runs")
+        .insert(payloadWithoutTeamId)
+        .select("id")
+        .single();
+      
+      insertedData = retryResult.data;
+      error = retryResult.error;
+    }
 
     if (error) {
       // Check if it's a duplicate key violation
@@ -150,13 +166,21 @@ export async function insertProductionRun(data: {
         }
       }
       console.error("Error inserting production run:", error);
-      return null;
+      console.error("Insert payload was:", JSON.stringify(insertPayload, null, 2));
+      // Throw error so it can be caught and handled by caller
+      throw new Error(`Failed to insert production run: ${error.message} (Code: ${error.code || "unknown"})`);
+    }
+
+    if (!insertedData || !insertedData.id) {
+      console.error("Insert succeeded but no data returned");
+      throw new Error("Insert succeeded but no ID returned from database");
     }
 
     return insertedData as { id: string };
   } catch (error) {
+    // Re-throw the error so caller can handle it properly
     console.error("Exception inserting production run:", error);
-    return null;
+    throw error;
   }
 }
 
@@ -364,8 +388,11 @@ export async function saveProductionData(
 
   if (!report || !report.workOrders || report.workOrders.length === 0) {
     result.errors.push("No work orders to save");
+    result.success = false;
     return result;
   }
+
+  console.log(`Starting to save ${report.workOrders.length} work orders for ${report.press} on ${report.date}`);
 
   // Process each work order sequentially
   for (const workOrder of report.workOrders) {
@@ -423,18 +450,41 @@ export async function saveProductionData(
         team_identifier: teamIdentifier, // Pass team_identifier to ensure proper grouping
       };
 
-      const productionRun = await insertProductionRun(productionRunData);
-
-      if (!productionRun || !productionRun.id) {
-        // If it's a duplicate, it's not really an error - just skip
+      let productionRun;
+      try {
+        console.log(`Attempting to insert production run for work order ${workOrder.work_order_number}:`, {
+          press: productionRunData.press,
+          date: productionRunData.date,
+          work_order: productionRunData.work_order,
+          shift: productionRunData.shift,
+          team: productionRunData.team,
+          team_identifier: productionRunData.team_identifier,
+        });
+        
+        productionRun = await insertProductionRun(productionRunData);
+        
+        if (!productionRun || !productionRun.id) {
+          // This shouldn't happen if insertProductionRun throws on error, but handle it just in case
+          result.errors.push(
+            `Insert returned null for work order ${workOrder.work_order_number || "unknown"} - no ID returned`
+          );
+          result.success = false;
+          console.error("Insert returned null for work order:", workOrder.work_order_number);
+          continue; // Skip this work order
+        }
+      } catch (insertError) {
+        const errorMessage = insertError instanceof Error ? insertError.message : String(insertError);
         result.errors.push(
-          `Skipped production run for work order ${workOrder.work_order_number || "unknown"} - may already exist`
+          `Failed to insert production run for work order ${workOrder.work_order_number || "unknown"}: ${errorMessage}`
         );
-        // Don't mark as failure for duplicates - continue processing other work orders
+        result.success = false;
+        console.error("Error inserting production run:", insertError);
+        console.error("Work order data:", JSON.stringify(productionRunData, null, 2));
         continue; // Skip this work order
       }
 
       result.recordsCreated.productionRuns++;
+      console.log(`Successfully inserted production run ${productionRun.id} for work order ${workOrder.work_order_number}`);
 
       const productionRunId = productionRun.id;
 
@@ -516,6 +566,16 @@ export async function saveProductionData(
     result.errors.push(`Exception updating upload history: ${errorMessage}`);
     result.success = false;
   }
+
+  // Log final summary
+  console.log(`Finished saving production data. Summary:`, {
+    totalWorkOrders: report.workOrders.length,
+    productionRunsCreated: result.recordsCreated.productionRuns,
+    downtimeEventsCreated: result.recordsCreated.downtimeEvents,
+    spoilageEventsCreated: result.recordsCreated.spoilageEvents,
+    errors: result.errors.length,
+    success: result.success,
+  });
 
   return result;
 }

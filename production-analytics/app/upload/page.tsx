@@ -176,23 +176,35 @@ export default function UploadPage() {
         }
 
         // Step 4: Save production data
+        console.log(`Saving production data for ${report.press} on ${report.date}, ${report.workOrders.length} work orders`);
         const saveResult = await saveProductionData(report, uploadHistory.id);
 
-        if (!saveResult.success) {
+        console.log("Save result:", {
+          success: saveResult.success,
+          recordsCreated: saveResult.recordsCreated,
+          errors: saveResult.errors,
+        });
+
+        if (!saveResult.success || saveResult.recordsCreated.productionRuns === 0) {
           // Update upload history with error status
           await insertUploadHistory({
             filename,
             press: report.press,
             date: report.date,
-            status: "failed",
+            status: saveResult.recordsCreated.productionRuns > 0 ? "partial" : "failed",
             error_log: saveResult.errors.join("; "),
+            records_created: saveResult.recordsCreated.productionRuns,
+            downtime_records: saveResult.recordsCreated.downtimeEvents,
+            spoilage_records: saveResult.recordsCreated.spoilageEvents,
           });
 
           results.push({
             filename,
-            success: false,
-            message: "Failed to save production data",
-            error: saveResult.errors.join("; "),
+            success: saveResult.recordsCreated.productionRuns > 0,
+            message: saveResult.recordsCreated.productionRuns > 0 
+              ? `Partially saved: ${saveResult.recordsCreated.productionRuns} production runs saved, but some errors occurred`
+              : "Failed to save production data - no records were created",
+            error: saveResult.errors.length > 0 ? saveResult.errors.join("; ") : "Unknown error - check console for details",
             recordsCreated: saveResult.recordsCreated,
           });
           continue;

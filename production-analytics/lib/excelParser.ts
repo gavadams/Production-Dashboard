@@ -954,9 +954,11 @@ export async function parseProductionReport(
 
     // Step 4: Parse work orders
     const workOrders = parseWorkOrders(excelData);
+    console.log(`Parsed ${workOrders.length} work orders from Excel file`);
     if (workOrders.length === 0) {
       // Warning: no work orders found
       console.warn("No work orders found in Excel file");
+      throw new Error("No work orders found in Excel file - cannot create production report");
     }
 
     // Step 5: Find production row indices for each work order
