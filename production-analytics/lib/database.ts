@@ -915,6 +915,18 @@ export interface TeamTrainingNeed {
   avg_impact: number;
 }
 
+interface TeamTrainingNeedRaw {
+  team_identifier?: string | null;
+  press?: string | null;
+  shift?: string | null;
+  team?: string | null;
+  issue_type?: string | null;
+  issue_category?: string | null;
+  occurrence_count?: number | null;
+  total_impact?: number | null;
+  avg_impact?: number | null;
+}
+
 /**
  * Gets team training needs using the Supabase RPC function
  * Identifies teams with repeated spoilage or downtime issues
@@ -948,7 +960,7 @@ export async function getTeamTrainingNeeds(
       return [];
     }
 
-    return data.map((record: any) => ({
+    return (data as TeamTrainingNeedRaw[]).map((record) => ({
       team_identifier: record.team_identifier || "",
       press: record.press || "",
       shift: record.shift || "",
