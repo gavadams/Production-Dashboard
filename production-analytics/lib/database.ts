@@ -112,6 +112,30 @@ export async function insertProductionRun(data: {
       .single();
 
     if (error) {
+      // Check if it's a duplicate key violation
+      if (error.code === "23505" || error.message.includes("duplicate") || error.message.includes("unique")) {
+        console.warn("Production run already exists:", {
+          press: data.press,
+          date: data.date,
+          work_order: data.work_order,
+          shift: data.shift,
+          team: data.team,
+        });
+        // Try to fetch the existing record
+        const { data: existingData } = await supabase
+          .from("production_runs")
+          .select("id")
+          .eq("press", data.press)
+          .eq("date", postgresDate)
+          .eq("work_order", data.work_order || "")
+          .eq("shift", data.shift || "")
+          .eq("team", data.team || "")
+          .maybeSingle();
+
+        if (existingData) {
+          return existingData as { id: string };
+        }
+      }
       console.error("Error inserting production run:", error);
       return null;
     }
@@ -353,6 +377,10 @@ export async function saveProductionData(
       const team = workOrder.shift?.team || "";
       const teamIdentifier = `${report.press}_${shift}_${team}`;
 
+      // Ensure shift and team are not empty strings (use null instead)
+      const shiftValue = shift && shift.trim() !== "" ? shift : null;
+      const teamValue = team && team.trim() !== "" ? team : null;
+
       const productionRunData = {
         press: report.press,
         date: report.date,
@@ -369,17 +397,18 @@ export async function saveProductionData(
         production_end_time: workOrder.production.end_time,
         production_minutes: productionMinutes,
         logged_downtime_minutes: totalDowntimeMinutes,
-        shift: shift,
-        team: team,
+        shift: shiftValue || "", // Schema requires NOT NULL, so use empty string if null
+        team: teamValue || "", // Schema requires NOT NULL, so use empty string if null
       };
 
       const productionRun = await insertProductionRun(productionRunData);
 
       if (!productionRun || !productionRun.id) {
+        // If it's a duplicate, it's not really an error - just skip
         result.errors.push(
-          `Failed to insert production run for work order ${workOrder.work_order_number || "unknown"}`
+          `Skipped production run for work order ${workOrder.work_order_number || "unknown"} - may already exist`
         );
-        result.success = false;
+        // Don't mark as failure for duplicates - continue processing other work orders
         continue; // Skip this work order
       }
 
