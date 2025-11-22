@@ -779,12 +779,16 @@ export function assignWorkOrderToShift(
     }
 
     // Normalize shift times (handle Date objects and strings)
-    let shiftStartStr = shift.start_time instanceof Date 
-      ? `${shift.start_time.getHours().toString().padStart(2, "0")}:${shift.start_time.getMinutes().toString().padStart(2, "0")}`
-      : String(shift.start_time);
-    let shiftEndStr = shift.end_time instanceof Date
-      ? `${shift.end_time.getHours().toString().padStart(2, "0")}:${shift.end_time.getMinutes().toString().padStart(2, "0")}`
-      : String(shift.end_time);
+    // Type assertion needed because Excel might return Date objects even though interface says string
+    const startTime = shift.start_time as string | Date | null;
+    const endTime = shift.end_time as string | Date | null;
+    
+    let shiftStartStr = startTime instanceof Date 
+      ? `${startTime.getHours().toString().padStart(2, "0")}:${startTime.getMinutes().toString().padStart(2, "0")}`
+      : String(startTime || "");
+    let shiftEndStr = endTime instanceof Date
+      ? `${endTime.getHours().toString().padStart(2, "0")}:${endTime.getMinutes().toString().padStart(2, "0")}`
+      : String(endTime || "");
 
     // Remove seconds if present (e.g., "06:00:00" -> "06:00")
     if (shiftStartStr.includes(":") && shiftStartStr.split(":").length === 3) {
