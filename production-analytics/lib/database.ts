@@ -588,3 +588,171 @@ export async function insertUploadHistory(uploadData: {
   }
 }
 
+export interface DailyProductionRecord {
+  press: string;
+  date: string; // DD-MM-YYYY format
+  total_production: number;
+  avg_run_speed: number;
+  avg_spoilage_pct: number;
+  efficiency_pct: number;
+}
+
+/**
+ * Gets daily production summary for a specific date
+ * Queries the daily_production_summary view
+ * 
+ * @param date - Date in DD-MM-YYYY format (e.g., "06-11-2025")
+ * @returns Array of DailyProductionRecord objects, or empty array if no data found
+ * 
+ * @example
+ * const records = await getDailyProduction("06-11-2025");
+ * records.forEach(record => {
+ *   console.log(`${record.press}: ${record.total_production} units`);
+ * });
+ */
+export async function getDailyProduction(
+  date: string
+): Promise<DailyProductionRecord[]> {
+  try {
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = date.split("-");
+    if (dateParts.length !== 3) {
+      console.error("Invalid date format. Expected DD-MM-YYYY, got:", date);
+      return [];
+    }
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
+    const { data, error } = await supabase
+      .from("daily_production_summary")
+      .select("press, date, total_production, avg_run_speed, avg_spoilage_pct, efficiency_pct")
+      .eq("date", postgresDate)
+      .order("press", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching daily production:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Convert date back to DD-MM-YYYY format and map to return type
+    return data.map((record) => {
+      // Convert date from YYYY-MM-DD back to DD-MM-YYYY
+      const recordDate = new Date(record.date);
+      const day = String(recordDate.getDate()).padStart(2, "0");
+      const month = String(recordDate.getMonth() + 1).padStart(2, "0");
+      const year = recordDate.getFullYear();
+      const formattedDate = `${day}-${month}-${year}`;
+
+      return {
+        press: record.press,
+        date: formattedDate,
+        total_production: record.total_production || 0,
+        avg_run_speed: record.avg_run_speed || 0,
+        avg_spoilage_pct: record.avg_spoilage_pct || 0,
+        efficiency_pct: record.efficiency_pct || 0,
+      };
+    });
+  } catch (error) {
+    console.error("Exception fetching daily production:", error);
+    return [];
+  }
+}
+
+export interface TopDowntimeIssue {
+  category: string;
+  total_minutes: number;
+  presses: string[];
+  occurrence_count: number;
+}
+
+/**
+ * Gets top downtime issues for a specific date
+ * Groups downtime events by category and aggregates minutes
+ * 
+ * @param date - Date in DD-MM-YYYY format (e.g., "06-11-2025")
+ * @param limit - Maximum number of issues to return (default: 5)
+ * @returns Array of TopDowntimeIssue objects, sorted by total minutes descending
+ * 
+ * @example
+ * const issues = await getTopDowntimeIssues("06-11-2025", 5);
+ * issues.forEach(issue => {
+ *   console.log(`${issue.category}: ${issue.total_minutes} minutes`);
+ * });
+ */
+export async function getTopDowntimeIssues(
+  date: string,
+  limit: number = 5
+): Promise<TopDowntimeIssue[]> {
+  try {
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = date.split("-");
+    if (dateParts.length !== 3) {
+      console.error("Invalid date format. Expected DD-MM-YYYY, got:", date);
+      return [];
+    }
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
+    const { data, error } = await supabase
+      .from("downtime_events")
+      .select("category, minutes, press")
+      .eq("date", postgresDate)
+      .order("minutes", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching downtime issues:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Group by category and aggregate
+    const categoryMap = new Map<string, {
+      total_minutes: number;
+      presses: Set<string>;
+      occurrence_count: number;
+    }>();
+
+    data.forEach((event) => {
+      const category = event.category || "Unknown";
+      const minutes = event.minutes || 0;
+      const press = event.press || "";
+
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, {
+          total_minutes: 0,
+          presses: new Set<string>(),
+          occurrence_count: 0,
+        });
+      }
+
+      const categoryData = categoryMap.get(category)!;
+      categoryData.total_minutes += minutes;
+      if (press) {
+        categoryData.presses.add(press);
+      }
+      categoryData.occurrence_count += 1;
+    });
+
+    // Convert to array and sort by total_minutes descending
+    const issues: TopDowntimeIssue[] = Array.from(categoryMap.entries())
+      .map(([category, data]) => ({
+        category,
+        total_minutes: data.total_minutes,
+        presses: Array.from(data.presses).sort(),
+        occurrence_count: data.occurrence_count,
+      }))
+      .sort((a, b) => b.total_minutes - a.total_minutes)
+      .slice(0, limit);
+
+    return issues;
+  } catch (error) {
+    console.error("Exception fetching top downtime issues:", error);
+    return [];
+  }
+}
+
