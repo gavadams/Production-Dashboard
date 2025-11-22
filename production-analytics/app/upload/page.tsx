@@ -10,8 +10,8 @@ interface FileWithValidation extends File {
   validationError?: string;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
+function formatFileSize(bytes: number | undefined): string {
+  if (!bytes || bytes === 0 || isNaN(bytes)) return "0 Bytes";
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -157,7 +157,7 @@ export default function UploadPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-gray-900 dark:text-white truncate">
-                        {file.name}
+                        {file.name || "Unknown file"}
                       </p>
                       {file.isValid ? (
                         <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
