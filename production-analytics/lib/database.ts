@@ -116,7 +116,7 @@ export async function insertProductionRun(data: {
       return null;
     }
 
-    return insertedData as { id: number };
+    return insertedData as { id: string };
   } catch (error) {
     console.error("Exception inserting production run:", error);
     return null;
