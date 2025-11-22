@@ -453,7 +453,6 @@ export function parseWorkOrders(
     const colB = row["B"]; // Good Production
     const colC = row["C"]; // LHE
     const colD = row["D"]; // Spoilage %
-    const colF = row["F"]; // Activity type (Make Ready, Production)
 
     // Check if column A has a numeric value (work order number)
     const workOrderNumber = parseNumericValue(colA);
