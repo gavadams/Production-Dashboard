@@ -5,9 +5,18 @@ import { useDropzone } from "react-dropzone";
 import { Upload, X, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
 import { validateFileName, getValidPressCodes } from "@/lib/fileValidation";
 
-interface FileWithValidation extends File {
+interface FileWithValidation {
+  name: string;
+  size: number;
+  type: string;
+  lastModified: number;
   isValid?: boolean;
   validationError?: string;
+  // Preserve File object methods
+  arrayBuffer: () => Promise<ArrayBuffer>;
+  stream: () => ReadableStream<Uint8Array>;
+  text: () => Promise<string>;
+  slice: (start?: number, end?: number, contentType?: string) => Blob;
 }
 
 function formatFileSize(bytes: number | undefined): string {
@@ -24,11 +33,19 @@ export default function UploadPage() {
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const validatedFiles: FileWithValidation[] = acceptedFiles.map((file) => {
       const validation = validateFileName(file.name);
+      // Preserve the File object and add validation properties
       return {
-        ...file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
         isValid: validation.isValid,
         validationError: validation.error,
-      };
+        arrayBuffer: file.arrayBuffer.bind(file),
+        stream: file.stream.bind(file),
+        text: file.text.bind(file),
+        slice: file.slice.bind(file),
+      } as FileWithValidation;
     });
 
     setFiles((prevFiles) => [...prevFiles, ...validatedFiles]);
