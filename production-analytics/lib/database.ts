@@ -948,7 +948,7 @@ export async function getTeamTrainingNeeds(
       return [];
     }
 
-    return data.map((record) => ({
+    return data.map((record: any) => ({
       team_identifier: record.team_identifier || "",
       press: record.press || "",
       shift: record.shift || "",
