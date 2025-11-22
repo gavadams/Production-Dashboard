@@ -2,8 +2,14 @@
 
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, X, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
+import { Upload, X, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { validateFileName, getValidPressCodes } from "@/lib/fileValidation";
+import { parseProductionReport } from "@/lib/excelParser";
+import {
+  checkExistingUpload,
+  insertUploadHistory,
+  saveProductionData,
+} from "@/lib/database";
 
 interface FileWithValidation {
   name: string;
@@ -19,6 +25,18 @@ interface FileWithValidation {
   slice: (start?: number, end?: number, contentType?: string) => Blob;
 }
 
+interface ProcessingResult {
+  filename: string;
+  success: boolean;
+  message: string;
+  recordsCreated?: {
+    productionRuns: number;
+    downtimeEvents: number;
+    spoilageEvents: number;
+  };
+  error?: string;
+}
+
 function formatFileSize(bytes: number | undefined): string {
   if (!bytes || bytes === 0 || isNaN(bytes)) return "0 Bytes";
   const k = 1024;
@@ -29,6 +47,9 @@ function formatFileSize(bytes: number | undefined): string {
 
 export default function UploadPage() {
   const [files, setFiles] = useState<FileWithValidation[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingResults, setProcessingResults] = useState<ProcessingResult[]>([]);
+  const [currentProcessingFile, setCurrentProcessingFile] = useState<string | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const validatedFiles: FileWithValidation[] = acceptedFiles.map((file) => {
@@ -67,15 +88,135 @@ export default function UploadPage() {
     setFiles([]);
   };
 
-  const handleProcessFiles = () => {
+  const handleProcessFiles = async () => {
     const validFiles = files.filter((file) => file.isValid);
     if (validFiles.length === 0) {
       alert("Please add at least one valid file to process.");
       return;
     }
-    // TODO: Implement file processing logic
-    console.log("Processing files:", validFiles);
-    alert(`Processing ${validFiles.length} file(s)...`);
+
+    setIsProcessing(true);
+    setProcessingResults([]);
+    const results: ProcessingResult[] = [];
+
+    for (const fileWithValidation of validFiles) {
+      const filename = fileWithValidation.name;
+      setCurrentProcessingFile(filename);
+
+      try {
+        // Step 1: Parse the production report
+        const file = new File(
+          [await fileWithValidation.arrayBuffer()],
+          filename,
+          { type: fileWithValidation.type }
+        );
+
+        const report = await parseProductionReport(file, filename);
+
+        if (!report) {
+          results.push({
+            filename,
+            success: false,
+            message: "Failed to parse production report",
+            error: "Parsing returned null",
+          });
+          continue;
+        }
+
+        // Step 2: Check for existing upload
+        const existing = await checkExistingUpload(report.press, report.date);
+
+        if (existing) {
+          const shouldProceed = window.confirm(
+            `An upload already exists for ${report.press} on ${report.date}.\n\n` +
+            `Previously uploaded: ${new Date(existing.uploaded_at).toLocaleString()}\n` +
+            `File: ${existing.filename}\n\n` +
+            `Do you want to proceed? This will create duplicate records.`
+          );
+
+          if (!shouldProceed) {
+            results.push({
+              filename,
+              success: false,
+              message: "Upload cancelled by user",
+              error: "User declined to overwrite existing data",
+            });
+            continue;
+          }
+        }
+
+        // Step 3: Create upload history record
+        const uploadHistory = await insertUploadHistory({
+          filename,
+          press: report.press,
+          date: report.date,
+          file_size: fileWithValidation.size,
+          status: "processing",
+        });
+
+        if (!uploadHistory) {
+          results.push({
+            filename,
+            success: false,
+            message: "Failed to create upload history record",
+            error: "Could not insert upload history",
+          });
+          continue;
+        }
+
+        // Step 4: Save production data
+        const saveResult = await saveProductionData(report, uploadHistory.id);
+
+        if (!saveResult.success) {
+          // Update upload history with error status
+          await insertUploadHistory({
+            filename,
+            press: report.press,
+            date: report.date,
+            file_size: fileWithValidation.size,
+            status: "failed",
+            error_message: saveResult.errors.join("; "),
+          });
+
+          results.push({
+            filename,
+            success: false,
+            message: "Failed to save production data",
+            error: saveResult.errors.join("; "),
+            recordsCreated: saveResult.recordsCreated,
+          });
+          continue;
+        }
+
+        // Step 5: Update upload history with success
+        await insertUploadHistory({
+          filename,
+          press: report.press,
+          date: report.date,
+          file_size: fileWithValidation.size,
+          status: "completed",
+        });
+
+        results.push({
+          filename,
+          success: true,
+          message: "Successfully processed and saved",
+          recordsCreated: saveResult.recordsCreated,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        results.push({
+          filename,
+          success: false,
+          message: "Error processing file",
+          error: errorMessage,
+        });
+      }
+    }
+
+    setProcessingResults(results);
+    setCurrentProcessingFile(null);
+    setIsProcessing(false);
   };
 
   const validFilesCount = files.filter((f) => f.isValid).length;
@@ -220,18 +361,171 @@ export default function UploadPage() {
             </div>
             <button
               onClick={handleProcessFiles}
-              disabled={validFilesCount === 0}
+              disabled={validFilesCount === 0 || isProcessing}
               className={`
-                px-6 py-2 rounded-lg font-medium transition-colors
+                px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2
                 ${
-                  validFilesCount > 0
+                  validFilesCount > 0 && !isProcessing
                     ? "bg-blue-600 hover:bg-blue-700 text-white"
                     : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
                 }
               `}
             >
-              Process Files ({validFilesCount})
+              {isProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                `Process Files (${validFilesCount})`
+              )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Status */}
+      {isProcessing && currentProcessingFile && (
+        <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
+            <div>
+              <p className="font-medium text-blue-900 dark:text-blue-100">
+                Processing: {currentProcessingFile}
+              </p>
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Please wait while we parse and save the data...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Results */}
+      {processingResults.length > 0 && !isProcessing && (
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+            Processing Results
+          </h2>
+
+          <div className="space-y-3">
+            {processingResults.map((result, index) => (
+              <div
+                key={`${result.filename}-${index}`}
+                className={`
+                  p-4 rounded-lg border
+                  ${
+                    result.success
+                      ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                      : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                  }
+                `}
+              >
+                <div className="flex items-start gap-3">
+                  {result.success ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium text-gray-900 dark:text-white">
+                        {result.filename}
+                      </p>
+                    </div>
+                    <p
+                      className={`text-sm ${
+                        result.success
+                          ? "text-green-700 dark:text-green-300"
+                          : "text-red-700 dark:text-red-300"
+                      }`}
+                    >
+                      {result.message}
+                    </p>
+                    {result.recordsCreated && (
+                      <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                        <p>
+                          Production Runs: {result.recordsCreated.productionRuns} • Downtime
+                          Events: {result.recordsCreated.downtimeEvents} • Spoilage Events:{" "}
+                          {result.recordsCreated.spoilageEvents}
+                        </p>
+                      </div>
+                    )}
+                    {result.error && (
+                      <details className="mt-2">
+                        <summary className="text-sm text-red-600 dark:text-red-400 cursor-pointer hover:underline">
+                          Show error details
+                        </summary>
+                        <pre className="mt-2 text-xs text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 p-2 rounded overflow-auto">
+                          {result.error}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary */}
+          <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Summary</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-gray-600 dark:text-gray-400">Total Files: </span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {processingResults.length}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600 dark:text-gray-400">Successful: </span>
+                <span className="font-medium text-green-600 dark:text-green-400">
+                  {processingResults.filter((r) => r.success).length}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600 dark:text-gray-400">Failed: </span>
+                <span className="font-medium text-red-600 dark:text-red-400">
+                  {processingResults.filter((r) => !r.success).length}
+                </span>
+              </div>
+            </div>
+            {processingResults.some((r) => r.success && r.recordsCreated) && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <h4 className="font-medium text-gray-900 dark:text-white mb-2">
+                  Total Records Created
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Production Runs: </span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {processingResults.reduce(
+                        (sum, r) => sum + (r.recordsCreated?.productionRuns || 0),
+                        0
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Downtime Events: </span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {processingResults.reduce(
+                        (sum, r) => sum + (r.recordsCreated?.downtimeEvents || 0),
+                        0
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Spoilage Events: </span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {processingResults.reduce(
+                        (sum, r) => sum + (r.recordsCreated?.spoilageEvents || 0),
+                        0
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
