@@ -81,7 +81,7 @@ export async function insertProductionRun(data: {
   logged_downtime_minutes: number | null; // INTEGER in schema
   shift: string | null; // VARCHAR(20) in schema
   team: string | null; // VARCHAR(20) in schema
-  team_identifier?: string; // Optional: constructed as press_shift_team
+      team_identifier?: string; // Optional: constructed as press_team (e.g., "LP05_A")
 }): Promise<{ id: string } | null> {
   try {
     // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
@@ -92,7 +92,8 @@ export async function insertProductionRun(data: {
     // This ensures each press/line has separate team analysis
     const shiftValue = data.shift || "";
     const teamValue = data.team || "";
-    const teamIdentifier = data.team_identifier || `${data.press}_${shiftValue}_${teamValue}`;
+    // team_identifier is just press_team (e.g., "LP05_A"), not press_shift_team
+    const teamIdentifier = data.team_identifier || `${data.press}_${teamValue}`;
 
     // Build insert object - include team_identifier to ensure proper grouping
     // Note: team_identifier might be a generated column, so we'll try with it first
@@ -453,11 +454,12 @@ export async function saveProductionData(
       const shiftValue = shift && shift.trim() !== "" ? shift.trim() : null;
       const teamValue = team && team.trim() !== "" ? team.trim() : null;
       
-      // Construct team_identifier: press_shift_team (e.g., "LP05_Earlies_A")
+      // Construct team_identifier: press_team (e.g., "LP05_A")
       // This ensures each press/line has separate team analysis
+      // Note: We don't include shift in team_identifier - teams are analyzed across all shifts
       // If team is missing, log a warning but still construct identifier
-      if (!teamValue || !shiftValue) {
-        console.warn(`Work order ${workOrder.work_order_number || "unknown"} has no shift/team assigned.`, {
+      if (!teamValue) {
+        console.warn(`Work order ${workOrder.work_order_number || "unknown"} has no team assigned.`, {
           shift: shiftValue,
           team: teamValue,
           assignedShift: assignedShift,
@@ -466,7 +468,7 @@ export async function saveProductionData(
         });
       }
       
-      const teamIdentifier = `${report.press}_${shiftValue || "Unknown"}_${teamValue || "Unknown"}`;
+      const teamIdentifier = `${report.press}_${teamValue || "Unknown"}`;
 
       const productionRunData = {
         press: report.press,
@@ -913,7 +915,7 @@ export async function getTeamPerformance(filters: {
 }): Promise<TeamPerformanceData[]> {
   try {
     // Select all needed fields
-    // Note: team_identifier will be constructed in code as press_shift_team
+    // Note: team_identifier will be constructed in code as press_team (e.g., "LP05_A")
     // to ensure proper separation of teams across different presses/lines
     let query = supabase
       .from("production_runs")
@@ -959,11 +961,11 @@ export async function getTeamPerformance(filters: {
     }>();
 
     data.forEach((record) => {
-      // Always construct team_identifier as press_shift_team to ensure proper separation
+      // Always construct team_identifier as press_team to ensure proper separation
       // This ensures each press/line has separate team analysis
-      // Format: "LP05_Earlies_TeamA" - unique per press, shift, and team combination
+      // Format: "LP05_A" - unique per press and team combination (not including shift)
       // We always construct it here rather than reading from DB to ensure consistency
-      const teamId = `${record.press}_${record.shift || ""}_${record.team || ""}`;
+      const teamId = `${record.press}_${record.team || ""}`;
       
       if (!teamMap.has(teamId)) {
         teamMap.set(teamId, {

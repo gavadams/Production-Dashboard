@@ -479,9 +479,27 @@ export function parseWorkOrders(
       console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
     } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
       // We're in a work order section, look for Make Ready and Production rows
-      const colFValue = colF !== null && colF !== undefined ? String(colF).trim() : "";
+      // Search multiple columns (E, F, etc.) for "Make Ready" or "Production" text
+      // Based on the Excel layout, "Make Ready" might be in the Average Run Speed column (E)
+      let foundActivityType: "make_ready" | "production" | null = null;
+      
+      // Check columns E, F, and other common columns for activity type
+      const activityColumns = ["E", "F", "D", "C", "B"];
+      for (const col of activityColumns) {
+        const colValue = row[col];
+        if (colValue !== null && colValue !== undefined) {
+          const colValueStr = String(colValue).trim().toLowerCase();
+          if (colValueStr.includes("make ready")) {
+            foundActivityType = "make_ready";
+            break;
+          } else if (colValueStr.includes("production")) {
+            foundActivityType = "production";
+            break;
+          }
+        }
+      }
 
-      if (colFValue.toLowerCase().includes("make ready")) {
+      if (foundActivityType === "make_ready") {
         // Found Make Ready row
         const timeRange = extractTimeRange(row);
         console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, timeRange, "Row data G:", row["G"], "H:", row["H"]);
@@ -489,7 +507,7 @@ export function parseWorkOrders(
           currentWorkOrder.make_ready.start_time = timeRange.start_time;
           currentWorkOrder.make_ready.end_time = timeRange.end_time;
         }
-      } else if (colFValue.toLowerCase().includes("production")) {
+      } else if (foundActivityType === "production") {
         // Found Production row
         const timeRange = extractTimeRange(row);
         console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, timeRange, "Row data G:", row["G"], "H:", row["H"]);
