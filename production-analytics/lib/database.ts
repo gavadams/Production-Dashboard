@@ -395,14 +395,25 @@ export async function insertUploadHistory(uploadData: {
           return existingData as { id: number };
         }
       }
-      console.error("Error inserting upload history:", error);
-      return null;
+      // Enhanced error logging
+      console.error("Error inserting upload history:", {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        uploadData,
+      });
+      throw new Error(
+        `Failed to insert upload history: ${error.message}${error.details ? ` (${error.details})` : ""}${error.hint ? ` Hint: ${error.hint}` : ""}`
+      );
     }
 
     return insertedData as { id: number };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Exception inserting upload history:", error);
-    return null;
+    throw new Error(`Exception inserting upload history: ${errorMessage}`);
   }
 }
 

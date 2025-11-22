@@ -146,20 +146,32 @@ export default function UploadPage() {
         }
 
         // Step 3: Create upload history record
-        const uploadHistory = await insertUploadHistory({
-          filename,
-          press: report.press,
-          date: report.date,
-          file_size: fileWithValidation.size,
-          status: "processing",
-        });
+        let uploadHistory;
+        try {
+          uploadHistory = await insertUploadHistory({
+            filename,
+            press: report.press,
+            date: report.date,
+            file_size: fileWithValidation.size,
+            status: "processing",
+          });
 
-        if (!uploadHistory) {
+          if (!uploadHistory) {
+            results.push({
+              filename,
+              success: false,
+              message: "Failed to create upload history record",
+              error: "Could not insert upload history - function returned null",
+            });
+            continue;
+          }
+        } catch (uploadError) {
+          const errorMessage = uploadError instanceof Error ? uploadError.message : "Unknown error";
           results.push({
             filename,
             success: false,
             message: "Failed to create upload history record",
-            error: "Could not insert upload history",
+            error: errorMessage,
           });
           continue;
         }
