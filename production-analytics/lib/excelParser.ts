@@ -300,8 +300,17 @@ export function parseShiftSummary(
       downtime: null,
     };
 
+    // Check if this row is actually work order data (has numeric value in column A)
+    // If so, skip it - we've reached the work orders section
+    const colA = row["A"];
+    if (colA !== null && colA !== undefined && /^\d+$/.test(String(colA).trim())) {
+      // This is work order data, not shift data - stop parsing shifts
+      break;
+    }
+
     // Map values from columns
-    Object.entries(columnMap).forEach(([col, field]) => {
+    let isWorkOrderData = false;
+    for (const [col, field] of Object.entries(columnMap)) {
       const value = row[col];
 
       if (value !== null && value !== undefined) {
@@ -335,12 +344,8 @@ export function parseShiftSummary(
             const validShifts = ["Earlies", "Lates", "Nights"];
             if (!validShifts.some(vs => strValue.toLowerCase().includes(vs.toLowerCase()))) {
               // If this doesn't look like a shift name, it might be work order data
-              // Check if column A has a numeric value (work order number)
-              const colA = row["A"];
-              if (colA !== null && colA !== undefined && /^\d+$/.test(String(colA).trim())) {
-                // This is work order data, not shift data - stop parsing
-                break;
-              }
+              isWorkOrderData = true;
+              break; // Exit the for loop
             }
           }
           
@@ -349,7 +354,12 @@ export function parseShiftSummary(
           }
         }
       }
-    });
+    }
+    
+    // If we detected work order data, stop parsing shifts
+    if (isWorkOrderData) {
+      break;
+    }
     
     // Debug logging for team extraction
     if (shift.shift && shift.team) {
@@ -431,6 +441,7 @@ export function parseWorkOrders(
       if (colFValue.toLowerCase().includes("make ready")) {
         // Found Make Ready row
         const timeRange = extractTimeRange(row);
+        console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, timeRange, "Row data G:", row["G"], "H:", row["H"]);
         if (currentWorkOrder.make_ready) {
           currentWorkOrder.make_ready.start_time = timeRange.start_time;
           currentWorkOrder.make_ready.end_time = timeRange.end_time;
@@ -438,6 +449,7 @@ export function parseWorkOrders(
       } else if (colFValue.toLowerCase().includes("production")) {
         // Found Production row
         const timeRange = extractTimeRange(row);
+        console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, timeRange, "Row data G:", row["G"], "H:", row["H"]);
         if (currentWorkOrder.production) {
           currentWorkOrder.production.start_time = timeRange.start_time;
           currentWorkOrder.production.end_time = timeRange.end_time;
@@ -502,23 +514,48 @@ function extractTimeRange(row: Record<string, unknown>): WorkOrderTimeRange {
   // Look for time values (format: HH:MM or HH:MM:SS)
   const timePattern = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
 
+  // Helper function to extract time from a value (handles strings, dates, and Excel serial numbers)
+  const extractTime = (value: unknown): string | null => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    // If it's a Date object, format it as HH:MM
+    if (value instanceof Date) {
+      const hours = value.getHours().toString().padStart(2, "0");
+      const minutes = value.getMinutes().toString().padStart(2, "0");
+      return `${hours}:${minutes}`;
+    }
+
+    // If it's a number (Excel serial time), convert it
+    if (typeof value === "number") {
+      // Excel stores times as fractions of a day (0.0 = midnight, 0.5 = noon)
+      // If the number is less than 1, it's likely a time
+      if (value >= 0 && value < 1) {
+        const totalMinutes = Math.floor(value * 24 * 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+      }
+    }
+
+    // Try as string
+    const strValue = String(value).trim();
+    
+    // Check if it matches time pattern
+    if (timePattern.test(strValue)) {
+      return strValue;
+    }
+
+    return null;
+  };
+
   // First, try to get Start from column G and End from column H (most common layout)
   const startValue = row["G"];
   const endValue = row["H"];
 
-  if (startValue !== null && startValue !== undefined) {
-    const strValue = String(startValue).trim();
-    if (timePattern.test(strValue)) {
-      timeRange.start_time = strValue;
-    }
-  }
-
-  if (endValue !== null && endValue !== undefined) {
-    const strValue = String(endValue).trim();
-    if (timePattern.test(strValue)) {
-      timeRange.end_time = strValue;
-    }
-  }
+  timeRange.start_time = extractTime(startValue);
+  timeRange.end_time = extractTime(endValue);
 
   // If we didn't find times in G/H, search other columns for flexibility
   if (timeRange.start_time === null || timeRange.end_time === null) {
@@ -526,18 +563,14 @@ function extractTimeRange(row: Record<string, unknown>): WorkOrderTimeRange {
     for (let i = 0; i < timeColumns.length; i++) {
       const col = timeColumns[i];
       const value = row[col];
+      const extractedTime = extractTime(value);
 
-      if (value !== null && value !== undefined) {
-        const strValue = String(value).trim();
-
-        // Check if it matches time pattern
-        if (timePattern.test(strValue)) {
-          if (timeRange.start_time === null) {
-            timeRange.start_time = strValue;
-          } else if (timeRange.end_time === null) {
-            timeRange.end_time = strValue;
-            break; // Found both times
-          }
+      if (extractedTime) {
+        if (timeRange.start_time === null) {
+          timeRange.start_time = extractedTime;
+        } else if (timeRange.end_time === null) {
+          timeRange.end_time = extractedTime;
+          break; // Found both times
         }
       }
     }
