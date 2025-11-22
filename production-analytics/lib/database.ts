@@ -421,8 +421,10 @@ export async function saveProductionData(
         0
       ) || 0;
 
-      const shift = workOrder.shift?.shift || "";
-      const team = workOrder.shift?.team || "";
+      // Extract shift and team from the assigned shift
+      const assignedShift = workOrder.shift;
+      const shift = assignedShift?.shift || "";
+      const team = assignedShift?.team || "";
       
       // Ensure shift and team are not empty strings (use null instead)
       const shiftValue = shift && shift.trim() !== "" ? shift.trim() : null;
@@ -431,8 +433,14 @@ export async function saveProductionData(
       // Construct team_identifier: press_shift_team (e.g., "LP05_Earlies_A")
       // This ensures each press/line has separate team analysis
       // If team is missing, log a warning but still construct identifier
-      if (!teamValue) {
-        console.warn(`Work order ${workOrder.work_order_number || "unknown"} has no team assigned. Shift: ${shiftValue || "unknown"}, Press: ${report.press}`);
+      if (!teamValue || !shiftValue) {
+        console.warn(`Work order ${workOrder.work_order_number || "unknown"} has no shift/team assigned.`, {
+          shift: shiftValue,
+          team: teamValue,
+          assignedShift: assignedShift,
+          productionTime: `${workOrder.production.start_time} - ${workOrder.production.end_time}`,
+          press: report.press,
+        });
       }
       
       const teamIdentifier = `${report.press}_${shiftValue || "Unknown"}_${teamValue || "Unknown"}`;

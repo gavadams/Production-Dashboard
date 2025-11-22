@@ -317,12 +317,16 @@ export function parseShiftSummary(
           let strValue = String(value).trim();
           
           // For team field, ensure we extract just the team letter (A, B, C)
-          // Handle cases where it might be "Team A", "A", "C", etc.
+          // Handle cases where it might be "Team A", "Shift A", "A", "C", etc.
           if (field === "team") {
-            // Remove "Team" prefix if present and extract just the letter
-            strValue = strValue.replace(/^team\s*/i, "").trim();
-            // Take only the first character if it's a letter
-            if (strValue.length > 1 && /^[A-Za-z]/.test(strValue)) {
+            // Remove "Team" or "Shift" prefix if present and extract just the letter
+            strValue = strValue.replace(/^(team|shift)\s*/i, "").trim();
+            // Extract the last letter if it's A, B, or C (handles "Shift A", "Shift B", etc.)
+            const lastChar = strValue.charAt(strValue.length - 1).toUpperCase();
+            if (["A", "B", "C"].includes(lastChar)) {
+              strValue = lastChar;
+            } else if (strValue.length > 0 && /^[A-Za-z]/.test(strValue)) {
+              // If not A/B/C at the end, take first character
               strValue = strValue.charAt(0).toUpperCase();
             }
             // Validate team is A, B, or C - if not, log warning but keep value
@@ -740,11 +744,28 @@ export function assignWorkOrderToShift(
     return null;
   }
 
+  // Normalize work order times (remove seconds if present)
+  let normalizedStart = workOrderStart;
+  let normalizedEnd = workOrderEnd;
+  
+  if (normalizedStart.includes(":") && normalizedStart.split(":").length === 3) {
+    normalizedStart = normalizedStart.split(":").slice(0, 2).join(":");
+  }
+  if (normalizedEnd.includes(":") && normalizedEnd.split(":").length === 3) {
+    normalizedEnd = normalizedEnd.split(":").slice(0, 2).join(":");
+  }
+
   // Convert times to minutes for easier comparison
-  const workOrderStartMinutes = timeToMinutes(workOrderStart);
-  const workOrderEndMinutes = timeToMinutes(workOrderEnd);
+  const workOrderStartMinutes = timeToMinutes(normalizedStart);
+  const workOrderEndMinutes = timeToMinutes(normalizedEnd);
 
   if (workOrderStartMinutes === null || workOrderEndMinutes === null) {
+    console.warn("assignWorkOrderToShift: Failed to parse work order times", {
+      normalizedStart,
+      normalizedEnd,
+      originalStart: workOrderStart,
+      originalEnd: workOrderEnd,
+    });
     return null;
   }
 
@@ -753,13 +774,35 @@ export function assignWorkOrderToShift(
 
   for (const shift of shifts) {
     if (!shift.start_time || !shift.end_time) {
+      console.warn("assignWorkOrderToShift: Shift missing times", shift);
       continue;
     }
 
-    const shiftStartMinutes = timeToMinutes(shift.start_time);
-    const shiftEndMinutes = timeToMinutes(shift.end_time);
+    // Normalize shift times (handle Date objects and strings)
+    let shiftStartStr = shift.start_time instanceof Date 
+      ? `${shift.start_time.getHours().toString().padStart(2, "0")}:${shift.start_time.getMinutes().toString().padStart(2, "0")}`
+      : String(shift.start_time);
+    let shiftEndStr = shift.end_time instanceof Date
+      ? `${shift.end_time.getHours().toString().padStart(2, "0")}:${shift.end_time.getMinutes().toString().padStart(2, "0")}`
+      : String(shift.end_time);
+
+    // Remove seconds if present (e.g., "06:00:00" -> "06:00")
+    if (shiftStartStr.includes(":") && shiftStartStr.split(":").length === 3) {
+      shiftStartStr = shiftStartStr.split(":").slice(0, 2).join(":");
+    }
+    if (shiftEndStr.includes(":") && shiftEndStr.split(":").length === 3) {
+      shiftEndStr = shiftEndStr.split(":").slice(0, 2).join(":");
+    }
+
+    const shiftStartMinutes = timeToMinutes(shiftStartStr);
+    const shiftEndMinutes = timeToMinutes(shiftEndStr);
 
     if (shiftStartMinutes === null || shiftEndMinutes === null) {
+      console.warn("assignWorkOrderToShift: Failed to parse shift times", {
+        shift: shift.shift,
+        start_time: shiftStartStr,
+        end_time: shiftEndStr,
+      });
       continue;
     }
 
@@ -787,7 +830,8 @@ export function assignWorkOrderToShift(
  * @returns Minutes since midnight, or null if invalid
  */
 function timeToMinutes(timeStr: string): number | null {
-  const timePattern = /^(\d{1,2}):(\d{2})$/;
+  // Handle both "HH:MM" and "HH:MM:SS" formats
+  const timePattern = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
   const match = timeStr.match(timePattern);
 
   if (!match) {
@@ -1038,6 +1082,7 @@ export async function parseProductionReport(
           : [];
 
       // Assign work order to shift based on production time
+      // Use production start time to determine which shift it belongs to
       const shift = assignWorkOrderToShift(
         workOrder.production.start_time,
         workOrder.production.end_time,
@@ -1049,6 +1094,7 @@ export async function parseProductionReport(
         console.log(`Work order ${workOrder.work_order_number} assigned to shift: ${shift.shift}, team: ${shift.team}`);
       } else {
         console.warn(`Work order ${workOrder.work_order_number} could not be assigned to a shift. Production time: ${workOrder.production.start_time} - ${workOrder.production.end_time}`);
+        console.warn(`Available shifts:`, shifts.map(s => `${s.shift} (${s.team}) ${s.start_time}-${s.end_time}`));
       }
 
       // Calculate run speed
