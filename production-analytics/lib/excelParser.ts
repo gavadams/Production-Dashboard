@@ -300,14 +300,6 @@ export function parseShiftSummary(
       downtime: null,
     };
 
-    // Check if this row is actually work order data (has numeric value in column A)
-    // If so, skip it - we've reached the work orders section
-    const colA = row["A"];
-    if (colA !== null && colA !== undefined && /^\d+$/.test(String(colA).trim())) {
-      // This is work order data, not shift data - stop parsing shifts
-      break;
-    }
-
     // Map values from columns
     let isWorkOrderData = false;
     for (const [col, field] of Object.entries(columnMap)) {
