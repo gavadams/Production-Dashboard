@@ -129,7 +129,8 @@ export async function insertProductionRun(data: {
     if (error && (error.message.includes("team_identifier") || error.code === "42703")) {
       console.warn("team_identifier column not found, inserting without it:", error.message);
       // Remove team_identifier from payload and try again
-      const { team_identifier, ...payloadWithoutTeamId } = insertPayload;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { team_identifier: _, ...payloadWithoutTeamId } = insertPayload;
       const retryResult = await supabase
         .from("production_runs")
         .insert(payloadWithoutTeamId)
