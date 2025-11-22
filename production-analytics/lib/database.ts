@@ -1,6 +1,43 @@
 import { supabase } from "./supabase";
 import type { DowntimeEvent, SpoilageEvent, ProductionReport } from "./excelParser";
 
+/**
+ * Helper function to calculate time difference in minutes
+ * Converts HH:MM time strings to minutes and calculates difference
+ * Handles times that cross midnight
+ */
+function timeDifferenceInMinutes(
+  startTime: string | null,
+  endTime: string | null
+): number | null {
+  if (!startTime || !endTime) {
+    return null;
+  }
+
+  const timePattern = /^(\d{1,2}):(\d{2})$/;
+  const startMatch = startTime.match(timePattern);
+  const endMatch = endTime.match(timePattern);
+
+  if (!startMatch || !endMatch) {
+    return null;
+  }
+
+  const startHours = parseInt(startMatch[1], 10);
+  const startMinutes = parseInt(startMatch[2], 10);
+  const endHours = parseInt(endMatch[1], 10);
+  const endMinutes = parseInt(endMatch[2], 10);
+
+  const startTotalMinutes = startHours * 60 + startMinutes;
+  const endTotalMinutes = endHours * 60 + endMinutes;
+
+  // Handle case where end time is next day (e.g., 22:00 to 06:00)
+  if (endTotalMinutes < startTotalMinutes) {
+    return 1440 - startTotalMinutes + endTotalMinutes; // 1440 = minutes in a day
+  }
+
+  return endTotalMinutes - startTotalMinutes;
+}
+
 export interface SaveProductionDataResult {
   success: boolean;
   recordsCreated: {
@@ -28,42 +65,48 @@ export interface SaveProductionDataResult {
  */
 export async function insertProductionRun(data: {
   press: string;
-  date: string; // DD-MM-YYYY format
-  work_order_number: number | null;
+  date: string; // DD-MM-YYYY format (will be converted to DATE)
+  work_order: string | null; // VARCHAR(20) in schema
   good_production: number | null;
-  lhe: number | null;
-  spoilage_percent: number | null;
-  make_ready_start_time: string | null;
-  make_ready_end_time: string | null;
-  production_start_time: string | null;
-  production_end_time: string | null;
-  run_speed: number | null;
-  shift: string | null;
-  team: string | null;
-  actual_line_hours: number | null;
-  make_ready_time: number | null;
-  downtime: number | null;
-}): Promise<{ id: number } | null> {
+  lhe_units: number | null; // DECIMAL(10,2) in schema
+  spoilage_percentage: number | null; // DECIMAL(5,2) in schema
+  shift_start_time: string | null; // TIME in schema
+  shift_end_time: string | null; // TIME in schema
+  make_ready_start_time: string | null; // TIME in schema
+  make_ready_end_time: string | null; // TIME in schema
+  make_ready_minutes: number | null; // INTEGER in schema
+  production_start_time: string | null; // TIME in schema
+  production_end_time: string | null; // TIME in schema
+  production_minutes: number | null; // INTEGER in schema
+  logged_downtime_minutes: number | null; // INTEGER in schema
+  shift: string | null; // VARCHAR(20) in schema
+  team: string | null; // VARCHAR(20) in schema
+}): Promise<{ id: string } | null> {
   try {
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = data.date.split("-");
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
     const { data: insertedData, error } = await supabase
       .from("production_runs")
       .insert({
         press: data.press,
-        date: data.date,
-        work_order_number: data.work_order_number,
-        good_production: data.good_production,
-        lhe: data.lhe,
-        spoilage_percent: data.spoilage_percent,
+        date: postgresDate, // Convert to YYYY-MM-DD format
+        work_order: data.work_order ? String(data.work_order) : null,
+        good_production: data.good_production ?? 0,
+        lhe_units: data.lhe_units ?? 0,
+        spoilage_percentage: data.spoilage_percentage ?? 0,
+        shift_start_time: data.shift_start_time,
+        shift_end_time: data.shift_end_time,
         make_ready_start_time: data.make_ready_start_time,
         make_ready_end_time: data.make_ready_end_time,
+        make_ready_minutes: data.make_ready_minutes ?? 0,
         production_start_time: data.production_start_time,
         production_end_time: data.production_end_time,
-        run_speed: data.run_speed,
-        shift: data.shift,
-        team: data.team,
-        actual_line_hours: data.actual_line_hours,
-        make_ready_time: data.make_ready_time,
-        downtime: data.downtime,
+        production_minutes: data.production_minutes ?? 0,
+        logged_downtime_minutes: data.logged_downtime_minutes ?? 0,
+        shift: data.shift || "",
+        team: data.team || "",
       })
       .select("id")
       .single();
@@ -94,16 +137,34 @@ export async function insertProductionRun(data: {
  * ]);
  */
 export async function insertDowntimeEvents(
-  productionRunId: number,
-  downtimeArray: DowntimeEvent[]
+  productionRunId: string,
+  downtimeArray: DowntimeEvent[],
+  denormalizedData: {
+    press: string;
+    date: string; // DD-MM-YYYY format
+    work_order: string | null;
+    shift: string;
+    team: string;
+    team_identifier: string;
+  }
 ): Promise<number> {
   if (!downtimeArray || downtimeArray.length === 0) {
     return 0;
   }
 
   try {
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = denormalizedData.date.split("-");
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
     const recordsToInsert = downtimeArray.map((event) => ({
       production_run_id: productionRunId,
+      press: denormalizedData.press,
+      date: postgresDate,
+      work_order: denormalizedData.work_order ? String(denormalizedData.work_order) : null,
+      shift: denormalizedData.shift,
+      team: denormalizedData.team,
+      team_identifier: denormalizedData.team_identifier,
       category: event.category,
       minutes: event.minutes,
     }));
@@ -139,16 +200,34 @@ export async function insertDowntimeEvents(
  * ]);
  */
 export async function insertSpoilageEvents(
-  productionRunId: number,
-  spoilageArray: SpoilageEvent[]
+  productionRunId: string,
+  spoilageArray: SpoilageEvent[],
+  denormalizedData: {
+    press: string;
+    date: string; // DD-MM-YYYY format
+    work_order: string | null;
+    shift: string;
+    team: string;
+    team_identifier: string;
+  }
 ): Promise<number> {
   if (!spoilageArray || spoilageArray.length === 0) {
     return 0;
   }
 
   try {
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = denormalizedData.date.split("-");
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
     const recordsToInsert = spoilageArray.map((event) => ({
       production_run_id: productionRunId,
+      press: denormalizedData.press,
+      date: postgresDate,
+      work_order: denormalizedData.work_order ? String(denormalizedData.work_order) : null,
+      shift: denormalizedData.shift,
+      team: denormalizedData.team,
+      team_identifier: denormalizedData.team_identifier,
       category: event.category,
       units: event.units,
     }));
@@ -187,13 +266,17 @@ export async function insertSpoilageEvents(
 export async function checkExistingUpload(
   press: string,
   date: string
-): Promise<{ id: number; filename: string; uploaded_at: string; status: string } | null> {
+): Promise<{ id: string; filename: string; uploaded_at: string; status: string } | null> {
   try {
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = date.split("-");
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
     const { data, error } = await supabase
       .from("upload_history")
       .select("id, filename, uploaded_at, status")
       .eq("press", press)
-      .eq("date", date)
+      .eq("date", postgresDate)
       .order("uploaded_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -251,23 +334,43 @@ export async function saveProductionData(
   for (const workOrder of report.workOrders) {
     try {
       // Step 1: Insert production_run record
+      // Calculate make_ready_minutes and production_minutes from times
+      const makeReadyMinutes = workOrder.make_ready.start_time && workOrder.make_ready.end_time
+        ? timeDifferenceInMinutes(workOrder.make_ready.start_time, workOrder.make_ready.end_time)
+        : null;
+      
+      const productionMinutes = workOrder.production.start_time && workOrder.production.end_time
+        ? timeDifferenceInMinutes(workOrder.production.start_time, workOrder.production.end_time)
+        : null;
+
+      // Calculate total downtime minutes from downtime events
+      const totalDowntimeMinutes = workOrder.downtime?.reduce(
+        (sum, event) => sum + (event.minutes || 0),
+        0
+      ) || 0;
+
+      const shift = workOrder.shift?.shift || "";
+      const team = workOrder.shift?.team || "";
+      const teamIdentifier = `${report.press}_${shift}_${team}`;
+
       const productionRunData = {
         press: report.press,
         date: report.date,
-        work_order_number: workOrder.work_order_number,
+        work_order: workOrder.work_order_number ? String(workOrder.work_order_number) : null,
         good_production: workOrder.good_production,
-        lhe: workOrder.lhe,
-        spoilage_percent: workOrder.spoilage_percent,
+        lhe_units: workOrder.lhe,
+        spoilage_percentage: workOrder.spoilage_percent,
+        shift_start_time: workOrder.shift?.start_time || null,
+        shift_end_time: workOrder.shift?.end_time || null,
         make_ready_start_time: workOrder.make_ready.start_time,
         make_ready_end_time: workOrder.make_ready.end_time,
+        make_ready_minutes: makeReadyMinutes,
         production_start_time: workOrder.production.start_time,
         production_end_time: workOrder.production.end_time,
-        run_speed: workOrder.run_speed,
-        shift: workOrder.shift?.shift || null,
-        team: workOrder.shift?.team || null,
-        actual_line_hours: workOrder.shift?.actual_hours || null,
-        make_ready_time: workOrder.shift?.make_ready_time || null,
-        downtime: workOrder.shift?.downtime || null,
+        production_minutes: productionMinutes,
+        logged_downtime_minutes: totalDowntimeMinutes,
+        shift: shift,
+        team: team,
       };
 
       const productionRun = await insertProductionRun(productionRunData);
@@ -284,9 +387,20 @@ export async function saveProductionData(
 
       const productionRunId = productionRun.id;
 
-      // Step 2: Insert downtime events
+      // Step 2: Insert downtime events with denormalized data
       if (workOrder.downtime && workOrder.downtime.length > 0) {
-        const downtimeCount = await insertDowntimeEvents(productionRunId, workOrder.downtime);
+        const downtimeCount = await insertDowntimeEvents(
+          productionRunId,
+          workOrder.downtime,
+          {
+            press: report.press,
+            date: report.date,
+            work_order: workOrder.work_order_number ? String(workOrder.work_order_number) : null,
+            shift: shift,
+            team: team,
+            team_identifier: teamIdentifier,
+          }
+        );
         result.recordsCreated.downtimeEvents += downtimeCount;
 
         if (downtimeCount === 0 && workOrder.downtime.length > 0) {
@@ -296,9 +410,20 @@ export async function saveProductionData(
         }
       }
 
-      // Step 3: Insert spoilage events
+      // Step 3: Insert spoilage events with denormalized data
       if (workOrder.spoilage && workOrder.spoilage.length > 0) {
-        const spoilageCount = await insertSpoilageEvents(productionRunId, workOrder.spoilage);
+        const spoilageCount = await insertSpoilageEvents(
+          productionRunId,
+          workOrder.spoilage,
+          {
+            press: report.press,
+            date: report.date,
+            work_order: workOrder.work_order_number ? String(workOrder.work_order_number) : null,
+            shift: shift,
+            team: team,
+            team_identifier: teamIdentifier,
+          }
+        );
         result.recordsCreated.spoilageEvents += spoilageCount;
 
         if (spoilageCount === 0 && workOrder.spoilage.length > 0) {
@@ -316,17 +441,15 @@ export async function saveProductionData(
     }
   }
 
-  // Step 4: Update upload_history with success status
+  // Step 4: Update upload_history with success status and counts
   try {
     const updateData: Record<string, unknown> = {
-      status: result.success ? "completed" : "partial",
+      status: result.success ? "success" : result.recordsCreated.productionRuns > 0 ? "partial" : "failed",
+      records_created: result.recordsCreated.productionRuns,
+      downtime_records: result.recordsCreated.downtimeEvents,
+      spoilage_records: result.recordsCreated.spoilageEvents,
+      error_log: result.errors.length > 0 ? result.errors.join("; ") : null,
     };
-
-    // Only include error_message if column exists in schema
-    // For now, we'll omit it to avoid schema errors
-    // if (result.errors.length > 0) {
-    //   updateData.error_message = result.errors.join("; ");
-    // }
 
     const { error: updateError } = await supabase
       .from("upload_history")
@@ -366,26 +489,32 @@ export async function insertUploadHistory(uploadData: {
   press: string;
   date: string; // DD-MM-YYYY format
   uploaded_at?: string;
-  file_size?: number;
   status?: string;
-  error_message?: string | null;
-}): Promise<{ id: number } | null> {
+  records_created?: number;
+  downtime_records?: number;
+  spoilage_records?: number;
+  error_log?: string | null;
+}): Promise<{ id: string } | null> {
   try {
-    // Build insert object without error_message if column doesn't exist
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
+    const dateParts = uploadData.date.split("-");
+    const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
+    // Build insert object with only columns that exist in the schema
     const insertData: Record<string, unknown> = {
       filename: uploadData.filename,
       press: uploadData.press,
-      date: uploadData.date,
+      date: postgresDate,
       uploaded_at: uploadData.uploaded_at || new Date().toISOString(),
-      file_size: uploadData.file_size || null,
-      status: uploadData.status || "completed",
+      status: uploadData.status || "success",
+      records_created: uploadData.records_created ?? 0,
+      downtime_records: uploadData.downtime_records ?? 0,
+      spoilage_records: uploadData.spoilage_records ?? 0,
+      error_log: uploadData.error_log || null,
     };
 
-    // Only include error_message if it's provided (and column exists in schema)
-    // For now, we'll omit it to avoid schema errors
-    // if (uploadData.error_message !== undefined) {
-    //   insertData.error_message = uploadData.error_message;
-    // }
+    // Only include columns that exist in your schema
+    // Omit file_size and error_message if they don't exist in your table
 
     const { data: insertedData, error } = await supabase
       .from("upload_history")
@@ -405,7 +534,7 @@ export async function insertUploadHistory(uploadData: {
           .single();
 
         if (existingData) {
-          return existingData as { id: number };
+          return existingData as { id: string };
         }
       }
       // Enhanced error logging
@@ -422,7 +551,7 @@ export async function insertUploadHistory(uploadData: {
       );
     }
 
-    return insertedData as { id: number };
+    return insertedData as { id: string };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Exception inserting upload history:", error);

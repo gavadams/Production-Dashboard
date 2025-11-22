@@ -152,7 +152,6 @@ export default function UploadPage() {
             filename,
             press: report.press,
             date: report.date,
-            file_size: fileWithValidation.size,
             status: "processing",
           });
 
@@ -185,9 +184,8 @@ export default function UploadPage() {
             filename,
             press: report.press,
             date: report.date,
-            file_size: fileWithValidation.size,
             status: "failed",
-            error_message: saveResult.errors.join("; "),
+            error_log: saveResult.errors.join("; "),
           });
 
           results.push({
@@ -200,14 +198,8 @@ export default function UploadPage() {
           continue;
         }
 
-        // Step 5: Update upload history with success
-        await insertUploadHistory({
-          filename,
-          press: report.press,
-          date: report.date,
-          file_size: fileWithValidation.size,
-          status: "completed",
-        });
+        // Step 5: Upload history is already updated by saveProductionData
+        // No need to update again here
 
         results.push({
           filename,
