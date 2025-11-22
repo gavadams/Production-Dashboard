@@ -81,33 +81,46 @@ export async function insertProductionRun(data: {
   logged_downtime_minutes: number | null; // INTEGER in schema
   shift: string | null; // VARCHAR(20) in schema
   team: string | null; // VARCHAR(20) in schema
+  team_identifier?: string; // Optional: constructed as press_shift_team
 }): Promise<{ id: string } | null> {
   try {
     // Convert date from DD-MM-YYYY to YYYY-MM-DD for PostgreSQL DATE type
     const dateParts = data.date.split("-");
     const postgresDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
 
+    // Construct team_identifier if not provided: press_shift_team
+    // This ensures each press/line has separate team analysis
+    const shiftValue = data.shift || "";
+    const teamValue = data.team || "";
+    const teamIdentifier = data.team_identifier || `${data.press}_${shiftValue}_${teamValue}`;
+
+    // Build insert object - include team_identifier to ensure proper grouping
+    // If team_identifier column doesn't exist in schema, this will fail at runtime
+    // and we'll know to add the column via migration
+    const insertPayload: Record<string, unknown> = {
+      press: data.press,
+      date: postgresDate, // Convert to YYYY-MM-DD format
+      work_order: data.work_order ? String(data.work_order) : null,
+      good_production: data.good_production ?? 0,
+      lhe_units: data.lhe_units ?? 0,
+      spoilage_percentage: data.spoilage_percentage ?? 0,
+      shift_start_time: data.shift_start_time,
+      shift_end_time: data.shift_end_time,
+      make_ready_start_time: data.make_ready_start_time,
+      make_ready_end_time: data.make_ready_end_time,
+      make_ready_minutes: data.make_ready_minutes ?? 0,
+      production_start_time: data.production_start_time,
+      production_end_time: data.production_end_time,
+      production_minutes: data.production_minutes ?? 0,
+      logged_downtime_minutes: data.logged_downtime_minutes ?? 0,
+      shift: shiftValue,
+      team: teamValue,
+      team_identifier: teamIdentifier, // Include to ensure proper grouping by press+shift+team
+    };
+
     const { data: insertedData, error } = await supabase
       .from("production_runs")
-      .insert({
-        press: data.press,
-        date: postgresDate, // Convert to YYYY-MM-DD format
-        work_order: data.work_order ? String(data.work_order) : null,
-        good_production: data.good_production ?? 0,
-        lhe_units: data.lhe_units ?? 0,
-        spoilage_percentage: data.spoilage_percentage ?? 0,
-        shift_start_time: data.shift_start_time,
-        shift_end_time: data.shift_end_time,
-        make_ready_start_time: data.make_ready_start_time,
-        make_ready_end_time: data.make_ready_end_time,
-        make_ready_minutes: data.make_ready_minutes ?? 0,
-        production_start_time: data.production_start_time,
-        production_end_time: data.production_end_time,
-        production_minutes: data.production_minutes ?? 0,
-        logged_downtime_minutes: data.logged_downtime_minutes ?? 0,
-        shift: data.shift || "",
-        team: data.team || "",
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
 
@@ -375,11 +388,19 @@ export async function saveProductionData(
 
       const shift = workOrder.shift?.shift || "";
       const team = workOrder.shift?.team || "";
-      const teamIdentifier = `${report.press}_${shift}_${team}`;
-
+      
       // Ensure shift and team are not empty strings (use null instead)
-      const shiftValue = shift && shift.trim() !== "" ? shift : null;
-      const teamValue = team && team.trim() !== "" ? team : null;
+      const shiftValue = shift && shift.trim() !== "" ? shift.trim() : null;
+      const teamValue = team && team.trim() !== "" ? team.trim() : null;
+      
+      // Construct team_identifier: press_shift_team (e.g., "LP05_Earlies_A")
+      // This ensures each press/line has separate team analysis
+      // If team is missing, log a warning but still construct identifier
+      if (!teamValue) {
+        console.warn(`Work order ${workOrder.work_order_number || "unknown"} has no team assigned. Shift: ${shiftValue || "unknown"}, Press: ${report.press}`);
+      }
+      
+      const teamIdentifier = `${report.press}_${shiftValue || "Unknown"}_${teamValue || "Unknown"}`;
 
       const productionRunData = {
         press: report.press,
@@ -399,6 +420,7 @@ export async function saveProductionData(
         logged_downtime_minutes: totalDowntimeMinutes,
         shift: shiftValue || "", // Schema requires NOT NULL, so use empty string if null
         team: teamValue || "", // Schema requires NOT NULL, so use empty string if null
+        team_identifier: teamIdentifier, // Pass team_identifier to ensure proper grouping
       };
 
       const productionRun = await insertProductionRun(productionRunData);
@@ -786,13 +808,17 @@ export interface TeamPerformanceData {
 export async function getTeamPerformance(filters: {
   press?: string;
   shift?: string;
+  team?: string; // Added team filter
   startDate: string; // YYYY-MM-DD format
   endDate: string; // YYYY-MM-DD format
 }): Promise<TeamPerformanceData[]> {
   try {
+    // Select all needed fields
+    // Note: team_identifier will be constructed in code as press_shift_team
+    // to ensure proper separation of teams across different presses/lines
     let query = supabase
       .from("production_runs")
-      .select("press, shift, team, team_identifier, calculated_run_speed, make_ready_minutes, spoilage_percentage, good_production")
+      .select("press, shift, team, calculated_run_speed, make_ready_minutes, spoilage_percentage, good_production")
       .gte("date", filters.startDate)
       .lte("date", filters.endDate);
 
@@ -803,6 +829,10 @@ export async function getTeamPerformance(filters: {
 
     if (filters.shift) {
       query = query.eq("shift", filters.shift);
+    }
+
+    if (filters.team) {
+      query = query.eq("team", filters.team);
     }
 
     const { data, error } = await query;
@@ -830,13 +860,17 @@ export async function getTeamPerformance(filters: {
     }>();
 
     data.forEach((record) => {
-      const teamId = record.team_identifier || `${record.press}_${record.shift}_${record.team}`;
+      // Always construct team_identifier as press_shift_team to ensure proper separation
+      // This ensures each press/line has separate team analysis
+      // Format: "LP05_Earlies_TeamA" - unique per press, shift, and team combination
+      // We always construct it here rather than reading from DB to ensure consistency
+      const teamId = `${record.press}_${record.shift || ""}_${record.team || ""}`;
       
       if (!teamMap.has(teamId)) {
         teamMap.set(teamId, {
-          press: record.press,
-          shift: record.shift,
-          team: record.team,
+          press: record.press as string,
+          shift: record.shift as string,
+          team: record.team as string,
           team_identifier: teamId,
           runs: 0,
           total_production: 0,
@@ -848,18 +882,21 @@ export async function getTeamPerformance(filters: {
 
       const teamData = teamMap.get(teamId)!;
       teamData.runs += 1;
-      teamData.total_production += record.good_production || 0;
+      teamData.total_production += (record.good_production as number) || 0;
 
-      if (record.calculated_run_speed && record.calculated_run_speed > 0) {
-        teamData.run_speeds.push(record.calculated_run_speed);
+      const runSpeed = (record.calculated_run_speed as number) || 0;
+      if (runSpeed > 0) {
+        teamData.run_speeds.push(runSpeed);
       }
 
-      if (record.make_ready_minutes !== null && record.make_ready_minutes !== undefined) {
-        teamData.make_ready_minutes.push(record.make_ready_minutes);
+      const makeReady = (record.make_ready_minutes as number) ?? null;
+      if (makeReady !== null && makeReady !== undefined) {
+        teamData.make_ready_minutes.push(makeReady);
       }
 
-      if (record.spoilage_percentage !== null && record.spoilage_percentage !== undefined) {
-        teamData.spoilage_percentages.push(record.spoilage_percentage);
+      const spoilagePct = (record.spoilage_percentage as number) ?? null;
+      if (spoilagePct !== null && spoilagePct !== undefined) {
+        teamData.spoilage_percentages.push(spoilagePct);
       }
     });
 

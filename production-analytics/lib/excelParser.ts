@@ -299,14 +299,33 @@ export function parseShiftSummary(
             shift[field] = numValue;
           }
         } else {
-          // String fields
-          const strValue = String(value).trim();
+          // String fields - especially important for team extraction
+          let strValue = String(value).trim();
+          
+          // For team field, ensure we extract just the team letter (A, B, C)
+          // Handle cases where it might be "Team A", "A", "C", etc.
+          if (field === "team") {
+            // Remove "Team" prefix if present and extract just the letter
+            strValue = strValue.replace(/^team\s*/i, "").trim();
+            // Take only the first character if it's a letter
+            if (strValue.length > 1 && /^[A-Za-z]/.test(strValue)) {
+              strValue = strValue.charAt(0).toUpperCase();
+            }
+          }
+          
           if (strValue.length > 0) {
             shift[field] = strValue;
           }
         }
       }
     });
+    
+    // Debug logging for team extraction
+    if (shift.shift && shift.team) {
+      console.log(`Extracted shift: ${shift.shift}, team: ${shift.team}, start: ${shift.start_time}, end: ${shift.end_time}`);
+    } else if (shift.shift && !shift.team) {
+      console.warn(`Shift ${shift.shift} found but team is missing. Row data:`, row);
+    }
 
     // Only add shift if it has at least one non-null value (not completely empty)
     const hasData = Object.values(shift).some((val) => val !== null);
@@ -923,6 +942,14 @@ export async function parseProductionReport(
     if (shifts.length === 0) {
       // Warning: no shifts found, but continue processing
       console.warn("No shifts found in Excel file");
+    } else {
+      // Debug: Log extracted shifts to verify team extraction
+      console.log(`Extracted ${shifts.length} shifts from Excel:`, shifts.map(s => ({
+        shift: s.shift,
+        team: s.team,
+        start: s.start_time,
+        end: s.end_time
+      })));
     }
 
     // Step 4: Parse work orders
@@ -955,6 +982,13 @@ export async function parseProductionReport(
         workOrder.production.end_time,
         shifts
       );
+      
+      // Debug: Log shift assignment
+      if (shift) {
+        console.log(`Work order ${workOrder.work_order_number} assigned to shift: ${shift.shift}, team: ${shift.team}`);
+      } else {
+        console.warn(`Work order ${workOrder.work_order_number} could not be assigned to a shift. Production time: ${workOrder.production.start_time} - ${workOrder.production.end_time}`);
+      }
 
       // Calculate run speed
       // Need production time in minutes and total downtime in minutes

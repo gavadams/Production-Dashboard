@@ -22,6 +22,7 @@ import {
 
 const PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
 const SHIFTS = ["Earlies", "Lates", "Nights"];
+const TEAMS = ["A", "B", "C"];
 const DATE_RANGES = [
   { label: "Last 7 days", value: 7 },
   { label: "Last 30 days", value: 30 },
@@ -34,6 +35,7 @@ type SortDirection = "asc" | "desc";
 export default function TeamsPage() {
   const [selectedPress, setSelectedPress] = useState<string>("");
   const [selectedShift, setSelectedShift] = useState<string>("");
+  const [selectedTeam, setSelectedTeam] = useState<string>("");
   const [selectedDaysBack, setSelectedDaysBack] = useState<number>(30);
   
   // Calculate date range based on daysBack
@@ -62,6 +64,7 @@ export default function TeamsPage() {
       const data = await getTeamPerformance({
         press: selectedPress || undefined,
         shift: selectedShift || undefined,
+        team: selectedTeam || undefined,
         startDate,
         endDate,
       });
@@ -77,7 +80,7 @@ export default function TeamsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPress, selectedShift, selectedDaysBack]);
+  }, [selectedPress, selectedShift, selectedTeam, selectedDaysBack]);
 
   useEffect(() => {
     fetchTeamData();
@@ -167,7 +170,7 @@ export default function TeamsPage() {
           <Filter className="h-5 w-5 text-gray-600 dark:text-gray-400" />
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Press Filter */}
           <div>
             <label htmlFor="press-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -203,6 +206,26 @@ export default function TeamsPage() {
               {SHIFTS.map((shift) => (
                 <option key={shift} value={shift}>
                   {shift}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Team Filter */}
+          <div>
+            <label htmlFor="team-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Team
+            </label>
+            <select
+              id="team-filter"
+              value={selectedTeam}
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Teams</option>
+              {TEAMS.map((team) => (
+                <option key={team} value={team}>
+                  Team {team}
                 </option>
               ))}
             </select>
