@@ -375,26 +375,38 @@ export function parseShiftSummary(
 
     if (isValidShift) {
       // Convert Date objects to HH:MM format for start_time and end_time
-      if (shift.start_time instanceof Date) {
-        const hours = shift.start_time.getHours().toString().padStart(2, "0");
-        const minutes = shift.start_time.getMinutes().toString().padStart(2, "0");
+      // Use type assertion because Excel might return Date objects even though interface says string
+      const startTime = shift.start_time as string | Date | null;
+      const endTime = shift.end_time as string | Date | null;
+      
+      if (startTime instanceof Date) {
+        const hours = startTime.getHours().toString().padStart(2, "0");
+        const minutes = startTime.getMinutes().toString().padStart(2, "0");
         shift.start_time = `${hours}:${minutes}`;
-      } else if (shift.start_time && typeof shift.start_time === "string") {
-        // Remove seconds if present
-        const timeStr = shift.start_time;
-        if (timeStr.includes(":") && timeStr.split(":").length === 3) {
+      } else if (startTime && typeof startTime === "string") {
+        // Remove seconds if present and extract just HH:MM
+        const timeStr = String(startTime);
+        // Handle full date strings like "Fri Nov 14 2025 06:00:00 GMT+0000"
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
+        if (timeMatch) {
+          shift.start_time = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
+        } else if (timeStr.includes(":") && timeStr.split(":").length === 3) {
           shift.start_time = timeStr.split(":").slice(0, 2).join(":");
         }
       }
 
-      if (shift.end_time instanceof Date) {
-        const hours = shift.end_time.getHours().toString().padStart(2, "0");
-        const minutes = shift.end_time.getMinutes().toString().padStart(2, "0");
+      if (endTime instanceof Date) {
+        const hours = endTime.getHours().toString().padStart(2, "0");
+        const minutes = endTime.getMinutes().toString().padStart(2, "0");
         shift.end_time = `${hours}:${minutes}`;
-      } else if (shift.end_time && typeof shift.end_time === "string") {
-        // Remove seconds if present
-        const timeStr = shift.end_time;
-        if (timeStr.includes(":") && timeStr.split(":").length === 3) {
+      } else if (endTime && typeof endTime === "string") {
+        // Remove seconds if present and extract just HH:MM
+        const timeStr = String(endTime);
+        // Handle full date strings like "Fri Nov 14 2025 13:00:00 GMT+0000"
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
+        if (timeMatch) {
+          shift.end_time = `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
+        } else if (timeStr.includes(":") && timeStr.split(":").length === 3) {
           shift.end_time = timeStr.split(":").slice(0, 2).join(":");
         }
       }
