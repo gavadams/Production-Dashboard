@@ -316,16 +316,21 @@ export async function saveProductionData(
     }
   }
 
-  // Step 4: Update upload_history with success status and counts
+  // Step 4: Update upload_history with success status
   try {
+    const updateData: Record<string, unknown> = {
+      status: result.success ? "completed" : "partial",
+    };
+
+    // Only include error_message if column exists in schema
+    // For now, we'll omit it to avoid schema errors
+    // if (result.errors.length > 0) {
+    //   updateData.error_message = result.errors.join("; ");
+    // }
+
     const { error: updateError } = await supabase
       .from("upload_history")
-      .update({
-        status: result.success ? "completed" : "partial",
-        error_message: result.errors.length > 0 ? result.errors.join("; ") : null,
-        // Store counts in a JSON field or separate fields if your schema supports it
-        // For now, we'll just update status and error_message
-      })
+      .update(updateData)
       .eq("id", uploadHistoryId);
 
     if (updateError) {
@@ -366,17 +371,25 @@ export async function insertUploadHistory(uploadData: {
   error_message?: string | null;
 }): Promise<{ id: number } | null> {
   try {
+    // Build insert object without error_message if column doesn't exist
+    const insertData: Record<string, unknown> = {
+      filename: uploadData.filename,
+      press: uploadData.press,
+      date: uploadData.date,
+      uploaded_at: uploadData.uploaded_at || new Date().toISOString(),
+      file_size: uploadData.file_size || null,
+      status: uploadData.status || "completed",
+    };
+
+    // Only include error_message if it's provided (and column exists in schema)
+    // For now, we'll omit it to avoid schema errors
+    // if (uploadData.error_message !== undefined) {
+    //   insertData.error_message = uploadData.error_message;
+    // }
+
     const { data: insertedData, error } = await supabase
       .from("upload_history")
-      .insert({
-        filename: uploadData.filename,
-        press: uploadData.press,
-        date: uploadData.date,
-        uploaded_at: uploadData.uploaded_at || new Date().toISOString(),
-        file_size: uploadData.file_size || null,
-        status: uploadData.status || "completed",
-        error_message: uploadData.error_message || null,
-      })
+      .insert(insertData)
       .select("id")
       .single();
 
