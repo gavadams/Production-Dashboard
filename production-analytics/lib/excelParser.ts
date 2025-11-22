@@ -364,10 +364,45 @@ export function parseShiftSummary(
       console.warn(`Shift ${shift.shift} found but team is missing. Row data:`, row);
     }
 
-    // Only add shift if it has at least one non-null value (not completely empty)
-    const hasData = Object.values(shift).some((val) => val !== null);
-    if (hasData) {
+    // Filter out invalid shifts (like "Daily Total" row)
+    // A valid shift must have a shift name (Earlies, Lates, Nights) and team
+    const isValidShift = shift.shift && 
+                        ["Earlies", "Lates", "Nights"].some(vs => 
+                          shift.shift?.toLowerCase().includes(vs.toLowerCase())
+                        ) &&
+                        shift.team &&
+                        ["A", "B", "C"].includes(shift.team);
+
+    if (isValidShift) {
+      // Convert Date objects to HH:MM format for start_time and end_time
+      if (shift.start_time instanceof Date) {
+        const hours = shift.start_time.getHours().toString().padStart(2, "0");
+        const minutes = shift.start_time.getMinutes().toString().padStart(2, "0");
+        shift.start_time = `${hours}:${minutes}`;
+      } else if (shift.start_time && typeof shift.start_time === "string") {
+        // Remove seconds if present
+        const timeStr = shift.start_time;
+        if (timeStr.includes(":") && timeStr.split(":").length === 3) {
+          shift.start_time = timeStr.split(":").slice(0, 2).join(":");
+        }
+      }
+
+      if (shift.end_time instanceof Date) {
+        const hours = shift.end_time.getHours().toString().padStart(2, "0");
+        const minutes = shift.end_time.getMinutes().toString().padStart(2, "0");
+        shift.end_time = `${hours}:${minutes}`;
+      } else if (shift.end_time && typeof shift.end_time === "string") {
+        // Remove seconds if present
+        const timeStr = shift.end_time;
+        if (timeStr.includes(":") && timeStr.split(":").length === 3) {
+          shift.end_time = timeStr.split(":").slice(0, 2).join(":");
+        }
+      }
+
       shifts.push(shift);
+      console.log(`Added valid shift: ${shift.shift}, team: ${shift.team}, ${shift.start_time}-${shift.end_time}`);
+    } else {
+      console.warn(`Skipped invalid shift row:`, shift);
     }
   }
 
@@ -778,25 +813,26 @@ export function assignWorkOrderToShift(
       continue;
     }
 
-    // Normalize shift times (handle Date objects and strings)
-    // Type assertion needed because Excel might return Date objects even though interface says string
-    const startTime = shift.start_time as string | Date | null;
-    const endTime = shift.end_time as string | Date | null;
-    
-    let shiftStartStr = startTime instanceof Date 
-      ? `${startTime.getHours().toString().padStart(2, "0")}:${startTime.getMinutes().toString().padStart(2, "0")}`
-      : String(startTime || "");
-    let shiftEndStr = endTime instanceof Date
-      ? `${endTime.getHours().toString().padStart(2, "0")}:${endTime.getMinutes().toString().padStart(2, "0")}`
-      : String(endTime || "");
+    // Shift times should already be normalized to "HH:MM" format from parseShiftSummary
+    // Extract time from string (handles both "HH:MM" and full date strings like "Fri Nov 14 2025 06:00:00 GMT+0000")
+    const extractTimeFromString = (timeStr: string | Date | null): string => {
+      if (!timeStr) return "";
+      
+      if (timeStr instanceof Date) {
+        return `${timeStr.getHours().toString().padStart(2, "0")}:${timeStr.getMinutes().toString().padStart(2, "0")}`;
+      }
+      
+      const str = String(timeStr);
+      // Try to match HH:MM pattern (handles "06:00", "Fri Nov 14 2025 06:00:00 GMT+0000", etc.)
+      const timeMatch = str.match(/(\d{1,2}):(\d{2})/);
+      if (timeMatch) {
+        return `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
+      }
+      return str;
+    };
 
-    // Remove seconds if present (e.g., "06:00:00" -> "06:00")
-    if (shiftStartStr.includes(":") && shiftStartStr.split(":").length === 3) {
-      shiftStartStr = shiftStartStr.split(":").slice(0, 2).join(":");
-    }
-    if (shiftEndStr.includes(":") && shiftEndStr.split(":").length === 3) {
-      shiftEndStr = shiftEndStr.split(":").slice(0, 2).join(":");
-    }
+    const shiftStartStr = extractTimeFromString(shift.start_time);
+    const shiftEndStr = extractTimeFromString(shift.end_time);
 
     const shiftStartMinutes = timeToMinutes(shiftStartStr);
     const shiftEndMinutes = timeToMinutes(shiftEndStr);

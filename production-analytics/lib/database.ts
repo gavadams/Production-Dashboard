@@ -151,14 +151,37 @@ export async function insertProductionRun(data: {
     if (error) {
       // Check if it's a duplicate key violation
       if (error.code === "23505" || error.message.includes("duplicate") || error.message.includes("unique")) {
-        console.warn("Production run already exists:", {
+        console.warn("Production run duplicate detected:", {
           press: data.press,
           date: data.date,
           work_order: data.work_order,
           shift: data.shift,
           team: data.team,
+          error: error.message,
         });
-        // Try to fetch the existing record
+        
+        // For duplicate work orders with different teams, we should still insert them
+        // The unique constraint should be on (press, date, work_order, shift, team)
+        // If shift and team are different, it's not a duplicate - throw error to be handled by caller
+        if (data.shift && data.team && (data.shift.trim() !== "" || data.team.trim() !== "")) {
+          // This is a valid duplicate (same work order, same shift/team) - return existing
+          const { data: existingData } = await supabase
+            .from("production_runs")
+            .select("id")
+            .eq("press", data.press)
+            .eq("date", postgresDate)
+            .eq("work_order", data.work_order || "")
+            .eq("shift", data.shift || "")
+            .eq("team", data.team || "")
+            .maybeSingle();
+
+          if (existingData) {
+            console.log("Found existing record for duplicate:", existingData.id);
+            return existingData as { id: string };
+          }
+        }
+        
+        // If shift/team are empty, this might be a real duplicate - still try to find it
         const { data: existingData } = await supabase
           .from("production_runs")
           .select("id")
