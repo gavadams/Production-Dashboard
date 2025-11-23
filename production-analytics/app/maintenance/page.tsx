@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, AlertCircle, Info, Filter, X } from "lucide-react";
+import toast from "react-hot-toast";
 import { getMaintenanceAlerts, getWeeklyDowntimeData } from "@/lib/database";
 import type { MaintenanceAlert, WeeklyDowntimeData } from "@/lib/database";
+import { formatErrorMessage } from "@/lib/errorMessages";
 import {
   LineChart,
   Line,
@@ -39,13 +41,15 @@ export default function MaintenancePage() {
         press: selectedPress || undefined,
       });
       setAlerts(data);
-    } catch (err) {
-      console.error("Error fetching maintenance alerts:", err);
-      setError(err instanceof Error ? err.message : "Failed to load maintenance alerts");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedPress]);
+        } catch (err) {
+          console.error("Error fetching maintenance alerts:", err);
+          const errorMsg = formatErrorMessage(err);
+          setError(errorMsg);
+          toast.error(errorMsg);
+        } finally {
+          setLoading(false);
+        }
+      }, [selectedPress]);
 
   useEffect(() => {
     fetchAlerts();
@@ -112,7 +116,7 @@ export default function MaintenancePage() {
           <Filter className="h-5 w-5 text-gray-600 dark:text-gray-400" />
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Press Filter */}
           <div>
             <label htmlFor="press-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -135,10 +139,29 @@ export default function MaintenancePage() {
         </div>
       </div>
 
-      {/* Loading State */}
+      {/* Loading State - Skeleton Loaders */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="space-y-6 animate-pulse">
+          {/* Alert Sections Skeleton */}
+          {[1, 2, 3].map((section) => (
+            <div key={section} className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="h-6 w-40 bg-gray-200 dark:bg-gray-700 rounded"></div>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1, 2, 3].map((card) => (
+                    <div key={card} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                      <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                      <div className="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                      <div className="h-4 w-36 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

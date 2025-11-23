@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calendar, TrendingUp, AlertCircle, Activity } from "lucide-react";
+import { Calendar, TrendingUp, AlertCircle, Activity, Database, Upload } from "lucide-react";
+import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
 import { getDailyProduction, getTopDowntimeIssues } from "@/lib/database";
 import { determinePressStatus } from "@/lib/utils";
+import { formatErrorMessage } from "@/lib/errorMessages";
 import Link from "next/link";
+import EmptyState from "@/components/EmptyState";
 import {
   BarChart,
   Bar,
@@ -119,7 +122,9 @@ export default function DashboardPage() {
       setTopIssues(issues);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
-      setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+      const errorMsg = formatErrorMessage(err);
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -171,8 +176,8 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Dashboard</h1>
 
         {/* Date Selector */}
-        <div className="flex items-center gap-4">
-          <label htmlFor="date-selector" className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+          <label htmlFor="date-selector" className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
             <Calendar className="h-5 w-5" />
             Select Date:
           </label>
@@ -181,7 +186,7 @@ export default function DashboardPage() {
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full sm:w-auto px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <span className="text-sm text-gray-600 dark:text-gray-400">
             {formatDate(selectedDate)}
@@ -189,10 +194,55 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Loading State */}
+      {/* Loading State - Skeleton Loaders */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="space-y-6 animate-pulse">
+          {/* Press Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {PRESS_CODES.map((press) => (
+              <div
+                key={press}
+                className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                </div>
+                <div className="space-y-3">
+                  <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-36 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Charts Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+              <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+              <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            </div>
+          </div>
+          
+          {/* Top Issues Skeleton */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+            <div className="h-6 w-40 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <div className="h-5 w-5 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 flex-1 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -208,8 +258,22 @@ export default function DashboardPage() {
 
       {/* Press Cards Grid */}
       {!loading && !error && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {pressData.map((press) => (
+        <>
+          {pressData.length === 0 || pressData.every((p) => p.productionTotal === 0) ? (
+            <EmptyState
+              icon={Database}
+              title="No Production Data Available"
+              description={`No production data found for ${formatDate(selectedDate)}. Upload production reports to see dashboard metrics.`}
+              action={{
+                label: "Upload Data",
+                onClick: () => {
+                  window.location.href = "/upload";
+                },
+              }}
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {pressData.map((press) => (
             <div
               key={press.press}
               className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow"

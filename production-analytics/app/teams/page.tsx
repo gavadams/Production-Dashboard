@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Filter, ArrowUpDown, ArrowUp, ArrowDown, GraduationCap } from "lucide-react";
+import { Filter, ArrowUpDown, ArrowUp, ArrowDown, GraduationCap, Users } from "lucide-react";
+import toast from "react-hot-toast";
 import { getTeamPerformance, getTeamTrainingNeeds, getTrainingRecommendation } from "@/lib/database";
 import type { TeamPerformanceData, TeamTrainingNeed } from "@/lib/database";
+import { formatErrorMessage } from "@/lib/errorMessages";
+import EmptyState from "@/components/EmptyState";
 import {
   BarChart,
   Bar,
@@ -74,13 +77,15 @@ export default function TeamsPage() {
       // Fetch training needs (use daysBack for lookback period)
       const trainingData = await getTeamTrainingNeeds(selectedDaysBack, 3);
       setTrainingNeeds(trainingData);
-    } catch (err) {
-      console.error("Error fetching team data:", err);
-      setError(err instanceof Error ? err.message : "Failed to load team data");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedPress, selectedShift, selectedTeam, selectedDaysBack]);
+        } catch (err) {
+          console.error("Error fetching team data:", err);
+          const errorMsg = formatErrorMessage(err);
+          setError(errorMsg);
+          toast.error(errorMsg);
+        } finally {
+          setLoading(false);
+        }
+      }, [selectedPress, selectedShift, selectedTeam, selectedDaysBack]);
 
   useEffect(() => {
     fetchTeamData();
@@ -252,10 +257,39 @@ export default function TeamsPage() {
         </div>
       </div>
 
-      {/* Loading State */}
+      {/* Loading State - Skeleton Loaders */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="space-y-6 animate-pulse">
+          {/* Table Skeleton */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="p-6">
+              <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex items-center gap-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                    <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                    <div className="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                    <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                    <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                    <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                    <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          {/* Charts Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+              <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+              <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -268,75 +302,136 @@ export default function TeamsPage() {
 
       {/* Table */}
       {!loading && !error && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-900">
-                <tr>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                    onClick={() => handleSort("team_identifier")}
+        <>
+          {sortedTeams.length === 0 ? (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-12">
+              <EmptyState
+                icon={Users}
+                title="No Team Data Found"
+                description={`No team performance data matches your current filters. Try adjusting the press, shift, team, or date range to see results.`}
+                action={{
+                  label: "Clear Filters",
+                  onClick: () => {
+                    setSelectedPress("");
+                    setSelectedShift("");
+                    setSelectedTeam("");
+                    setSelectedDaysBack(30);
+                  },
+                }}
+              />
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {/* Mobile Card View */}
+              <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-700">
+                {sortedTeams.map((team) => (
+                  <div
+                    key={team.team_identifier}
+                    className={`p-4 ${getRowClassName(team)}`}
                   >
-                    <div className="flex items-center gap-2">
-                      Team
-                      <SortIcon column="team_identifier" />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {team.team_identifier}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {team.press} • {team.shift} • {team.team}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Runs:</span>
+                          <span className="ml-1 font-medium text-gray-900 dark:text-white">{team.total_runs}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Production:</span>
+                          <span className="ml-1 font-medium text-gray-900 dark:text-white">{team.total_production.toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Speed:</span>
+                          <span className="ml-1 font-medium text-gray-900 dark:text-white">{team.avg_run_speed.toFixed(1)} /hr</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Make Ready:</span>
+                          <span className="ml-1 font-medium text-gray-900 dark:text-white">{team.avg_make_ready_minutes.toFixed(0)} min</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-gray-600 dark:text-gray-400">Spoilage:</span>
+                          <span className={`ml-1 font-medium ${team.avg_spoilage_pct > 2 ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"}`}>
+                            {team.avg_spoilage_pct.toFixed(2)}%
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                    onClick={() => handleSort("total_runs")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Runs
-                      <SortIcon column="total_runs" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                    onClick={() => handleSort("total_production")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Total Production
-                      <SortIcon column="total_production" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                    onClick={() => handleSort("avg_run_speed")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Avg Speed
-                      <SortIcon column="avg_run_speed" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                    onClick={() => handleSort("avg_make_ready_minutes")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Avg Make Ready
-                      <SortIcon column="avg_make_ready_minutes" />
-                    </div>
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                    onClick={() => handleSort("avg_spoilage_pct")}
-                  >
-                    <div className="flex items-center gap-2">
-                      Avg Spoilage %
-                      <SortIcon column="avg_spoilage_pct" />
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {sortedTeams.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                      No team data found for the selected filters
-                    </td>
-                  </tr>
-                ) : (
+                  </div>
+                ))}
+              </div>
+              
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={() => handleSort("team_identifier")}
+                      >
+                        <div className="flex items-center gap-2">
+                          Team
+                          <SortIcon column="team_identifier" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={() => handleSort("total_runs")}
+                      >
+                        <div className="flex items-center gap-2">
+                          Runs
+                          <SortIcon column="total_runs" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={() => handleSort("total_production")}
+                      >
+                        <div className="flex items-center gap-2">
+                          Total Production
+                          <SortIcon column="total_production" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={() => handleSort("avg_run_speed")}
+                      >
+                        <div className="flex items-center gap-2">
+                          Avg Speed
+                          <SortIcon column="avg_run_speed" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={() => handleSort("avg_make_ready_minutes")}
+                      >
+                        <div className="flex items-center gap-2">
+                          Avg Make Ready
+                          <SortIcon column="avg_make_ready_minutes" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={() => handleSort("avg_spoilage_pct")}
+                      >
+                        <div className="flex items-center gap-2">
+                          Avg Spoilage %
+                          <SortIcon column="avg_spoilage_pct" />
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {(
                   sortedTeams.map((team) => (
                     <tr
                       key={team.team_identifier}

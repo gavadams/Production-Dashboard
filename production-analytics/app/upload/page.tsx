@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, X, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 import { validateFileName, getValidPressCodes } from "@/lib/fileValidation";
 import { parseProductionReport } from "@/lib/excelParser";
 import {
@@ -10,6 +11,7 @@ import {
   insertUploadHistory,
   saveProductionData,
 } from "@/lib/database";
+import { formatErrorMessage, formatSuccessMessage } from "@/lib/errorMessages";
 
 interface FileWithValidation {
   name: string;
@@ -50,10 +52,26 @@ export default function UploadPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingResults, setProcessingResults] = useState<ProcessingResult[]>([]);
   const [currentProcessingFile, setCurrentProcessingFile] = useState<string | null>(null);
+  const [processingProgress, setProcessingProgress] = useState<{
+    current: number;
+    total: number;
+    currentFile: string;
+  } | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<number, string>>({});
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    const validatedFiles: FileWithValidation[] = acceptedFiles.map((file) => {
+    const validatedFiles: FileWithValidation[] = acceptedFiles.map((file, index) => {
       const validation = validateFileName(file.name);
+      const fileIndex = files.length + index;
+      
+      // Set validation error for invalid files
+      if (!validation.isValid && validation.error) {
+        setValidationErrors((prev) => ({
+          ...prev,
+          [fileIndex]: validation.error || "Invalid file",
+        }));
+      }
+      
       // Preserve the File object and add validation properties
       return {
         name: file.name,
@@ -70,7 +88,18 @@ export default function UploadPage() {
     });
 
     setFiles((prevFiles) => [...prevFiles, ...validatedFiles]);
-  }, []);
+    
+    // Show toast for validation results
+    const validCount = validatedFiles.filter((f) => f.isValid).length;
+    const invalidCount = validatedFiles.filter((f) => !f.isValid).length;
+    
+    if (validCount > 0) {
+      toast.success(`${validCount} file${validCount > 1 ? "s" : ""} added successfully`);
+    }
+    if (invalidCount > 0) {
+      toast.error(`${invalidCount} file${invalidCount > 1 ? "s" : ""} failed validation`);
+    }
+  }, [files.length]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -82,26 +111,56 @@ export default function UploadPage() {
 
   const removeFile = (index: number) => {
     setFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+    setValidationErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[index];
+      // Reindex remaining errors
+      const reindexed: Record<number, string> = {};
+      Object.keys(newErrors).forEach((key) => {
+        const oldIndex = Number(key);
+        if (oldIndex > index) {
+          reindexed[oldIndex - 1] = newErrors[oldIndex];
+        } else if (oldIndex < index) {
+          reindexed[oldIndex] = newErrors[oldIndex];
+        }
+      });
+      return reindexed;
+    });
+    toast.success("File removed");
   };
 
   const clearAllFiles = () => {
     setFiles([]);
+    setValidationErrors({});
+    setProcessingResults([]);
+    toast.success("All files cleared");
   };
 
   const handleProcessFiles = async () => {
     const validFiles = files.filter((file) => file.isValid);
     if (validFiles.length === 0) {
-      alert("Please add at least one valid file to process.");
+      toast.error("Please add at least one valid file to process.");
       return;
     }
 
     setIsProcessing(true);
     setProcessingResults([]);
+    setProcessingProgress({
+      current: 0,
+      total: validFiles.length,
+      currentFile: "",
+    });
     const results: ProcessingResult[] = [];
 
-    for (const fileWithValidation of validFiles) {
+    for (let i = 0; i < validFiles.length; i++) {
+      const fileWithValidation = validFiles[i];
       const filename = fileWithValidation.name;
       setCurrentProcessingFile(filename);
+      setProcessingProgress({
+        current: i + 1,
+        total: validFiles.length,
+        currentFile: filename,
+      });
 
       try {
         // Step 1: Parse the production report
@@ -220,12 +279,13 @@ export default function UploadPage() {
           recordsCreated: saveResult.recordsCreated,
         });
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        const friendlyError = formatErrorMessage(error);
+        toast.error(friendlyError);
         results.push({
           filename,
           success: false,
           message: "Error processing file",
-          error: errorMessage,
+          error: friendlyError,
         });
       }
     }
@@ -241,7 +301,7 @@ export default function UploadPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Upload Data</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">Upload Data</h1>
         <p className="text-gray-600 dark:text-gray-400">
           Upload production data files. Files must match the pattern:{" "}
           <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-sm">
@@ -342,10 +402,15 @@ export default function UploadPage() {
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       {formatFileSize(file.size)}
                     </p>
-                    {!file.isValid && file.validationError && (
-                      <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                        {file.validationError}
-                      </p>
+                    {!file.isValid && (file.validationError || validationErrors[index]) && (
+                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                        <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                          {file.validationError || validationErrors[index] || "Invalid file"}
+                        </p>
+                        <p className="text-xs text-red-500 dark:text-red-500 mt-1">
+                          Expected format: 857{"{PRESS}"}_DD-MMM-YYYY.xlsx
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -400,19 +465,37 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Processing Status */}
-      {isProcessing && currentProcessingFile && (
-        <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
-            <div>
-              <p className="font-medium text-blue-900 dark:text-blue-100">
-                Processing: {currentProcessingFile}
-              </p>
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                Please wait while we parse and save the data...
-              </p>
+      {/* Processing Status with Progress Bar */}
+      {isProcessing && processingProgress && (
+        <div className="mt-8 p-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg animate-fade-in">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
+              <div className="flex-1">
+                <p className="font-medium text-blue-900 dark:text-blue-100">
+                  Processing: {processingProgress.currentFile}
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  File {processingProgress.current} of {processingProgress.total}
+                </p>
+              </div>
             </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-3 overflow-hidden">
+              <div
+                className="bg-blue-600 dark:bg-blue-400 h-full rounded-full transition-all duration-500 ease-out relative"
+                style={{
+                  width: `${(processingProgress.current / processingProgress.total) * 100}%`,
+                }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 dark:from-blue-500 dark:via-blue-600 dark:to-blue-700 animate-pulse"></div>
+              </div>
+            </div>
+            
+            <p className="text-xs text-blue-600 dark:text-blue-400 text-center font-medium">
+              {Math.round((processingProgress.current / processingProgress.total) * 100)}% complete
+            </p>
           </div>
         </div>
       )}

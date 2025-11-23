@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, Calendar, Download, Filter, X, Clock, TrendingUp, AlertTriangle, Package } from "lucide-react";
+import { Search, Calendar, Download, Filter, X, Clock, TrendingUp, AlertTriangle, Package, FileSearch } from "lucide-react";
+import toast from "react-hot-toast";
 import { getProductionRunReports, searchWorkOrder } from "@/lib/database";
 import type { ProductionRunReport, WorkOrderSearchResult } from "@/lib/database";
+import { formatErrorMessage, formatSuccessMessage } from "@/lib/errorMessages";
+import EmptyState from "@/components/EmptyState";
 import {
   BarChart,
   Bar,
@@ -69,7 +72,9 @@ export default function ReportsPage() {
       setReports(data);
     } catch (err) {
       console.error("Error fetching reports:", err);
-      setError(err instanceof Error ? err.message : "Failed to load reports");
+      const errorMsg = formatErrorMessage(err);
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -91,7 +96,9 @@ export default function ReportsPage() {
       setWorkOrderDetails(details);
     } catch (err) {
       console.error("Error fetching work order details:", err);
-      setDetailsError(err instanceof Error ? err.message : "Failed to load work order details");
+      const errorMsg = formatErrorMessage(err);
+      setDetailsError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setDetailsLoading(false);
     }
@@ -99,7 +106,7 @@ export default function ReportsPage() {
 
   const handleExportCSV = () => {
     if (reports.length === 0) {
-      alert("No data to export");
+      toast.error("No data to export");
       return;
     }
 
@@ -212,8 +219,8 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Additional Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Additional Filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Press Filter */}
             <div>
               <label htmlFor="press-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -300,10 +307,25 @@ export default function ReportsPage() {
           </button>
         </div>
 
-        {/* Loading State */}
+        {/* Loading State - Skeleton Loaders */}
         {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="p-6 space-y-4 animate-pulse">
+            <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="flex items-center gap-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                  <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -316,17 +338,93 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {/* Results Table */}
-        {!loading && !error && (
-          <div className="overflow-x-auto">
-            {reports.length === 0 ? (
-              <div className="p-12 text-center">
-                <p className="text-gray-500 dark:text-gray-400">
-                  No production runs found for the selected filters
-                </p>
-              </div>
-            ) : (
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            {/* Results Table */}
+            {!loading && !error && (
+              <div className="overflow-x-auto">
+                {reports.length === 0 ? (
+                  <div className="p-12">
+                    <EmptyState
+                      icon={FileSearch}
+                      title="No Reports Found"
+                      description={`No production runs match your search criteria. Try adjusting the work order number, date range, press, shift, or team filters.`}
+                      action={{
+                        label: "Clear Filters",
+                        onClick: () => {
+                          setWorkOrderSearch("");
+                          setSelectedPress("");
+                          setSelectedShift("");
+                          setSelectedTeam("");
+                          const today = new Date();
+                          const thirtyDaysAgo = new Date();
+                          thirtyDaysAgo.setDate(today.getDate() - 30);
+                          setEndDate(today.toISOString().split("T")[0]);
+                          setStartDate(thirtyDaysAgo.toISOString().split("T")[0]);
+                        },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-4 p-4">
+                      {reports.map((report) => (
+                        <div
+                          key={report.id}
+                          className="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {report.work_order || "No Work Order"}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {report.date} • {report.press}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {report.good_production.toLocaleString()}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {report.calculated_run_speed.toFixed(1)} /hr
+                                </div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">Shift:</span>
+                                <span className="ml-1 text-gray-900 dark:text-white">{report.shift}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">Team:</span>
+                                <span className="ml-1 text-gray-900 dark:text-white">{report.team}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">Spoilage:</span>
+                                <span className="ml-1 text-gray-900 dark:text-white">{report.spoilage_percentage.toFixed(2)}%</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">Make Ready:</span>
+                                <span className="ml-1 text-gray-900 dark:text-white">{report.make_ready_minutes} min</span>
+                              </div>
+                            </div>
+                            {report.work_order && (
+                              <button
+                                onClick={() => handleWorkOrderClick(report.work_order!)}
+                                className="w-full mt-2 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors"
+                              >
+                                View Details
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -402,12 +500,14 @@ export default function ReportsPage() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                    </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
 
       {/* Work Order Detail Modal */}
       {selectedWorkOrder && (
