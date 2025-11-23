@@ -458,14 +458,15 @@ export function parseWorkOrders(
     const workOrderNumber = parseNumericValue(colA);
 
     if (workOrderNumber !== null) {
-      // Save previous work order if exists
+      // Save previous work order if exists (including blank work orders)
       if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
         workOrders.push(completeWorkOrder(currentWorkOrder));
       }
 
-      // Start new work order
+      // Start new work order (including work order 0 - blank entries)
       // Note: We allow duplicate work order numbers because the same work order
       // can appear in different shifts/teams and should be tracked separately
+      // Work order 0 (blank) is allowed and will be saved as a separate entry
       currentWorkOrder = {
         work_order_number: workOrderNumber,
         good_production: parseNumericValue(colB),
@@ -475,7 +476,11 @@ export function parseWorkOrders(
         production: { start_time: null, end_time: null },
       };
       currentWorkOrderStartRow = i;
-      console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
+      if (workOrderNumber === 0) {
+        console.log(`Found blank work order (0) at row ${i + 1} - will be saved as separate entry`);
+      } else {
+        console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
+      }
       
       // Check if this row also has "Make Ready" in column F (same row as work order number)
       const colF = row["F"];
@@ -1001,57 +1006,77 @@ function calculateOverlap(
  * @param workOrders - Array of work orders to find production rows for
  * @returns Map of work order number to production row index
  */
-function findProductionRowIndices(
+/**
+ * Finds production row indices for work orders, matching them in order to handle duplicates
+ * 
+ * @param excelData - Array of row objects with column letters as keys
+ * @param workOrders - Array of work orders to find production rows for
+ * @returns Array of production row indices, one for each work order in the same order
+ */
+function findProductionRowIndicesForWorkOrders(
   excelData: Array<Record<string, unknown>>,
   workOrders: WorkOrder[]
-): Map<number | null, number> {
-  const productionRowMap = new Map<number | null, number>();
+): number[] {
+  const productionRowIndices: number[] = [];
+  // Track which work order rows we've already processed to handle duplicates
+  const processedWorkOrderRows = new Set<number>();
 
   for (const workOrder of workOrders) {
+    // Allow work order 0 (blank entries) - they should be processed too
     if (workOrder.work_order_number === null) {
+      productionRowIndices.push(-1);
       continue;
     }
 
-    // Find the work order row first
+    // Find the next unprocessed work order row with this number
     let workOrderRowIndex = -1;
     for (let i = 0; i < excelData.length; i++) {
+      if (processedWorkOrderRows.has(i)) {
+        continue; // Skip already processed rows
+      }
       const row = excelData[i];
       const colA = row["A"];
       const workOrderNumber = parseNumericValue(colA);
       if (workOrderNumber === workOrder.work_order_number) {
         workOrderRowIndex = i;
+        processedWorkOrderRows.add(i);
         break;
       }
     }
 
     if (workOrderRowIndex === -1) {
+      console.warn(`Could not find work order row for WO ${workOrder.work_order_number}`);
+      productionRowIndices.push(-1);
       continue;
     }
 
-    // Find the production row after the work order row
+    // Find the production row after this specific work order row
     // Production row has "Production" in column F (exact match, case-insensitive)
+    let productionRowIndex = -1;
     for (let i = workOrderRowIndex + 1; i < excelData.length; i++) {
       const row = excelData[i];
       const colF = row["F"];
       const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
 
       if (colFValue === "production") {
-        productionRowMap.set(workOrder.work_order_number, i);
-        console.log(`Found production row for WO ${workOrder.work_order_number} at row ${i + 1}`);
+        productionRowIndex = i;
+        console.log(`Found production row for WO ${workOrder.work_order_number} at row ${i + 1} (work order row was ${workOrderRowIndex + 1})`);
         break;
       }
 
-      // Stop if we hit the next work order
+      // Stop if we hit the next work order (but skip work order 0)
       const colA = row["A"];
       const nextWorkOrderNumber = parseNumericValue(colA);
-      if (nextWorkOrderNumber !== null) {
+      if (nextWorkOrderNumber !== null && nextWorkOrderNumber > 0) {
         console.warn(`Did not find production row for WO ${workOrder.work_order_number} - hit next work order ${nextWorkOrderNumber} at row ${i + 1}`);
         break;
       }
     }
+
+    productionRowIndices.push(productionRowIndex);
   }
 
-  return productionRowMap;
+  return productionRowIndices;
 }
 
 /**
@@ -1147,11 +1172,12 @@ export async function parseProductionReport(
     }
 
     // Step 5: Find production row indices for each work order
-    const productionRowMap = findProductionRowIndices(excelData, workOrders);
+    // We need to match work orders to their production rows in order to handle duplicates
+    const productionRowIndices = findProductionRowIndicesForWorkOrders(excelData, workOrders);
 
     // Step 6: Enrich each work order with downtime, spoilage, shift, and run speed
-    const workOrdersWithDetails: WorkOrderWithDetails[] = workOrders.map((workOrder) => {
-      const productionRowIndex = productionRowMap.get(workOrder.work_order_number) ?? -1;
+    const workOrdersWithDetails: WorkOrderWithDetails[] = workOrders.map((workOrder, index) => {
+      const productionRowIndex = productionRowIndices[index] ?? -1;
 
       // Parse downtime and spoilage events
       const downtime =
@@ -1254,3 +1280,4 @@ export function getColumnLetter(index: number): string {
 export function getColumnIndex(letter: string): number {
   return XLSX.utils.decode_col(letter);
 }
+
