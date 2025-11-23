@@ -668,11 +668,12 @@ function completeWorkOrder(workOrder: Partial<WorkOrder>): WorkOrder {
 }
 
 /**
- * Parses downtime events from rows after a work order's production row
+ * Parses downtime events from rows after a work order's start row (where Good Production is found)
  * Looks for rows where column O (Comments) has text and column P (Mins) has a number
+ * This captures events during both Make Ready and Production phases
  * 
  * @param excelData - Array of row objects with column letters as keys (from parseExcelFile)
- * @param productionRowIndex - Index of the production row (after this row, downtime events are found)
+ * @param workOrderStartRowIndex - Index of the work order start row (where column B has Good Production)
  * @returns Array of DowntimeEvent objects
  * 
  * @example
@@ -685,14 +686,14 @@ function completeWorkOrder(workOrder: Partial<WorkOrder>): WorkOrder {
  */
 export function parseDowntimeEvents(
   excelData: Array<Record<string, unknown>>,
-  productionRowIndex: number
+  workOrderStartRowIndex: number
 ): DowntimeEvent[] {
-  if (!excelData || excelData.length === 0 || productionRowIndex < 0) {
+  if (!excelData || excelData.length === 0 || workOrderStartRowIndex < 0) {
     return [];
   }
 
   const downtimeEvents: DowntimeEvent[] = [];
-  const startRow = productionRowIndex + 1; // Start after the production row
+  const startRow = workOrderStartRowIndex + 1; // Start after the work order start row (Make Ready row)
 
   // Scan forward until we find the next work order block (column B has Good Production value) or end of data
   // This catches both regular work orders (column A has number) and blank work orders (column B has value)
@@ -742,11 +743,12 @@ export function parseDowntimeEvents(
 }
 
 /**
- * Parses spoilage events from rows after a work order's production row
+ * Parses spoilage events from rows after a work order's start row (where Good Production is found)
  * Looks for rows where column O (Comments) has text and column Q (Units) has a number
+ * This captures events during both Make Ready and Production phases
  * 
  * @param excelData - Array of row objects with column letters as keys (from parseExcelFile)
- * @param productionRowIndex - Index of the production row (after this row, spoilage events are found)
+ * @param workOrderStartRowIndex - Index of the work order start row (where column B has Good Production)
  * @returns Array of SpoilageEvent objects
  * 
  * @example
@@ -759,14 +761,14 @@ export function parseDowntimeEvents(
  */
 export function parseSpoilageEvents(
   excelData: Array<Record<string, unknown>>,
-  productionRowIndex: number
+  workOrderStartRowIndex: number
 ): SpoilageEvent[] {
-  if (!excelData || excelData.length === 0 || productionRowIndex < 0) {
+  if (!excelData || excelData.length === 0 || workOrderStartRowIndex < 0) {
     return [];
   }
 
   const spoilageEvents: SpoilageEvent[] = [];
-  const startRow = productionRowIndex + 1; // Start after the production row
+  const startRow = workOrderStartRowIndex + 1; // Start after the work order start row (Make Ready row)
 
   // Scan forward until we find the next work order block (column B has Good Production value) or end of data
   // This catches both regular work orders (column A has number) and blank work orders (column B has value)
@@ -1109,6 +1111,79 @@ function findProductionRowIndicesForWorkOrders(
 }
 
 /**
+ * Finds work order start row indices (where column B has Good Production value)
+ * This is used to parse downtime/spoilage events from the entire work order block
+ * 
+ * @param excelData - Array of row objects with column letters as keys
+ * @param workOrders - Array of work orders to find start rows for
+ * @returns Array of work order start row indices, one for each work order in the same order
+ */
+function findWorkOrderStartRowIndices(
+  excelData: Array<Record<string, unknown>>,
+  workOrders: WorkOrder[]
+): number[] {
+  const startRowIndices: number[] = [];
+  // Track which work order rows we've already processed to handle duplicates
+  const processedWorkOrderRows = new Set<number>();
+
+  for (const workOrder of workOrders) {
+    // Allow work order 0 (blank entries) - they should be processed too
+    if (workOrder.work_order_number === null) {
+      startRowIndices.push(-1);
+      continue;
+    }
+
+    // Find the next unprocessed work order row with this number
+    // For work order 0, we need to check column B (Good Production) instead of column A
+    let workOrderRowIndex = -1;
+    for (let i = 0; i < excelData.length; i++) {
+      if (processedWorkOrderRows.has(i)) {
+        continue; // Skip already processed rows
+      }
+      const row = excelData[i];
+      
+      if (workOrder.work_order_number === 0) {
+        // For blank work orders, match by column B (Good Production = 0) instead of column A
+        const colB = row["B"];
+        const goodProduction = parseNumericValue(colB);
+        if (goodProduction === 0 && workOrder.good_production === 0) {
+          // Also check that column F has "Make Ready" to ensure it's the right row
+          const colF = row["F"];
+          const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+          if (colFValue.includes("make ready")) {
+            workOrderRowIndex = i;
+            processedWorkOrderRows.add(i);
+            break;
+          }
+        }
+      } else {
+        // For regular work orders, match by column A (work order number) and column B (Good Production)
+        const colA = row["A"];
+        const colB = row["B"];
+        const workOrderNumber = parseNumericValue(colA);
+        const goodProduction = parseNumericValue(colB);
+        if (workOrderNumber === workOrder.work_order_number && goodProduction === workOrder.good_production) {
+          workOrderRowIndex = i;
+          processedWorkOrderRows.add(i);
+          break;
+        }
+      }
+    }
+
+    if (workOrderRowIndex === -1) {
+      console.warn(`Could not find work order start row for WO ${workOrder.work_order_number}`);
+      startRowIndices.push(-1);
+      continue;
+    }
+
+    startRowIndices.push(workOrderRowIndex);
+    console.log(`Found work order start row for WO ${workOrder.work_order_number} at row ${workOrderRowIndex + 1}`);
+  }
+
+  return startRowIndices;
+}
+
+/**
  * Converts time difference to minutes
  * 
  * @param startTime - Start time in HH:MM format
@@ -1200,26 +1275,29 @@ export async function parseProductionReport(
       throw new Error("No work orders found in Excel file - cannot create production report");
     }
 
-    // Step 5: Find production row indices for each work order
+    // Step 5: Find production row indices and work order start row indices for each work order
     // We need to match work orders to their production rows in order to handle duplicates
     const productionRowIndices = findProductionRowIndicesForWorkOrders(excelData, workOrders);
+    const workOrderStartRowIndices = findWorkOrderStartRowIndices(excelData, workOrders);
 
     // Step 6: Enrich each work order with downtime, spoilage, shift, and run speed
     const workOrdersWithDetails: WorkOrderWithDetails[] = workOrders.map((workOrder, index) => {
       const productionRowIndex = productionRowIndices[index] ?? -1;
+      const workOrderStartRowIndex = workOrderStartRowIndices[index] ?? -1;
 
-      // Parse downtime and spoilage events
+      // Parse downtime and spoilage events from the work order start row until the next work order block
+      // This captures events during both Make Ready and Production phases
       const downtime =
-        productionRowIndex >= 0
-          ? parseDowntimeEvents(excelData, productionRowIndex)
+        workOrderStartRowIndex >= 0
+          ? parseDowntimeEvents(excelData, workOrderStartRowIndex)
           : [];
       const spoilage =
-        productionRowIndex >= 0
-          ? parseSpoilageEvents(excelData, productionRowIndex)
+        workOrderStartRowIndex >= 0
+          ? parseSpoilageEvents(excelData, workOrderStartRowIndex)
           : [];
       
       // Debug: Log downtime and spoilage events found
-      if (productionRowIndex >= 0) {
+      if (workOrderStartRowIndex >= 0) {
         console.log(`Work order ${workOrder.work_order_number}: Found ${downtime.length} downtime events, ${spoilage.length} spoilage events`);
         if (downtime.length > 0) {
           console.log(`Downtime events:`, downtime.map(e => `${e.category}: ${e.minutes} min`));
@@ -1228,7 +1306,7 @@ export async function parseProductionReport(
           console.log(`Spoilage events:`, spoilage.map(e => `${e.category}: ${e.units} units`));
         }
       } else {
-        console.warn(`Work order ${workOrder.work_order_number}: Production row index not found, skipping downtime/spoilage parsing`);
+        console.warn(`Work order ${workOrder.work_order_number}: Work order start row index not found, skipping downtime/spoilage parsing`);
       }
 
       // Assign work order to shift based on production time
