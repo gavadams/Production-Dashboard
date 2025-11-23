@@ -694,15 +694,16 @@ export function parseDowntimeEvents(
   const downtimeEvents: DowntimeEvent[] = [];
   const startRow = productionRowIndex + 1; // Start after the production row
 
-  // Scan forward until we find the next work order (numeric value in column A) or end of data
+  // Scan forward until we find the next work order block (column B has Good Production value) or end of data
+  // This catches both regular work orders (column A has number) and blank work orders (column B has value)
   for (let i = startRow; i < excelData.length; i++) {
     const row = excelData[i];
 
-    // Check if we've reached the next work order (numeric value in column A)
-    const colA = row["A"];
-    const workOrderNumber = parseNumericValue(colA);
-    if (workOrderNumber !== null) {
-      // Found next work order, stop processing
+    // Check if we've reached the next work order block (column B has Good Production value)
+    const colB = row["B"];
+    const goodProduction = parseNumericValue(colB);
+    if (goodProduction !== null) {
+      // Found next work order block, stop processing
       break;
     }
 
@@ -767,15 +768,16 @@ export function parseSpoilageEvents(
   const spoilageEvents: SpoilageEvent[] = [];
   const startRow = productionRowIndex + 1; // Start after the production row
 
-  // Scan forward until we find the next work order (numeric value in column A) or end of data
+  // Scan forward until we find the next work order block (column B has Good Production value) or end of data
+  // This catches both regular work orders (column A has number) and blank work orders (column B has value)
   for (let i = startRow; i < excelData.length; i++) {
     const row = excelData[i];
 
-    // Check if we've reached the next work order (numeric value in column A)
-    const colA = row["A"];
-    const workOrderNumber = parseNumericValue(colA);
-    if (workOrderNumber !== null) {
-      // Found next work order, stop processing
+    // Check if we've reached the next work order block (column B has Good Production value)
+    const colB = row["B"];
+    const goodProduction = parseNumericValue(colB);
+    if (goodProduction !== null) {
+      // Found next work order block, stop processing
       break;
     }
 
@@ -1033,18 +1035,37 @@ function findProductionRowIndicesForWorkOrders(
     }
 
     // Find the next unprocessed work order row with this number
+    // For work order 0, we need to check column B (Good Production) instead of column A
     let workOrderRowIndex = -1;
     for (let i = 0; i < excelData.length; i++) {
       if (processedWorkOrderRows.has(i)) {
         continue; // Skip already processed rows
       }
       const row = excelData[i];
-      const colA = row["A"];
-      const workOrderNumber = parseNumericValue(colA);
-      if (workOrderNumber === workOrder.work_order_number) {
-        workOrderRowIndex = i;
-        processedWorkOrderRows.add(i);
-        break;
+      
+      if (workOrder.work_order_number === 0) {
+        // For blank work orders, match by column B (Good Production = 0) instead of column A
+        const colB = row["B"];
+        const goodProduction = parseNumericValue(colB);
+        if (goodProduction === 0 && workOrder.good_production === 0) {
+          // Also check that column F has "Make Ready" to ensure it's the right row
+          const colF = row["F"];
+          const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+          if (colFValue.includes("make ready")) {
+            workOrderRowIndex = i;
+            processedWorkOrderRows.add(i);
+            break;
+          }
+        }
+      } else {
+        // For regular work orders, match by column A (work order number)
+        const colA = row["A"];
+        const workOrderNumber = parseNumericValue(colA);
+        if (workOrderNumber === workOrder.work_order_number) {
+          workOrderRowIndex = i;
+          processedWorkOrderRows.add(i);
+          break;
+        }
       }
     }
 
@@ -1068,11 +1089,15 @@ function findProductionRowIndicesForWorkOrders(
         break;
       }
 
-      // Stop if we hit the next work order (but skip work order 0)
-      const colA = row["A"];
-      const nextWorkOrderNumber = parseNumericValue(colA);
-      if (nextWorkOrderNumber !== null && nextWorkOrderNumber > 0) {
-        console.warn(`Did not find production row for WO ${workOrder.work_order_number} - hit next work order ${nextWorkOrderNumber} at row ${i + 1}`);
+      // Stop if we hit the next work order block (check column B for Good Production)
+      // This catches both regular work orders (column A has number) and blank work orders (column B has value)
+      const colB = row["B"];
+      const nextGoodProduction = parseNumericValue(colB);
+      if (nextGoodProduction !== null) {
+        // Found next work order block (could be regular or blank)
+        const colA = row["A"];
+        const nextWorkOrderNumber = parseNumericValue(colA);
+        console.warn(`Did not find production row for WO ${workOrder.work_order_number} - hit next work order block (WO: ${nextWorkOrderNumber ?? 0}, Good Production: ${nextGoodProduction}) at row ${i + 1}`);
         break;
       }
     }
