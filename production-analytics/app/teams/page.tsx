@@ -431,8 +431,7 @@ export default function TeamsPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {(
-                  sortedTeams.map((team) => (
+                    {sortedTeams.map((team) => (
                     <tr
                       key={team.team_identifier}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${getRowClassName(team)}`}
