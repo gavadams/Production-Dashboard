@@ -470,8 +470,7 @@ export default function TeamsPage() {
                         </span>
                       </td>
                     </tr>
-                  ))
-                )}
+                  ))}
               </tbody>
             </table>
           </div>
