@@ -15,7 +15,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 
 const PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
