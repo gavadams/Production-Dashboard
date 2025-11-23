@@ -454,32 +454,36 @@ export function parseWorkOrders(
     const colC = row["C"]; // LHE
     const colD = row["D"]; // Spoilage %
 
-    // Check if column A has a numeric value (work order number)
+    // Check if column B (Good Production) has a numeric value - this indicates a new work order block
+    // Column B is always populated at the start of a new work order block, even for blank work orders
+    const goodProduction = parseNumericValue(colB);
     const workOrderNumber = parseNumericValue(colA);
 
-    if (workOrderNumber !== null) {
-      // Save previous work order if exists (including blank work orders)
+    // If column B has a value (including 0), this is the start of a new work order block
+    if (goodProduction !== null) {
+      // Save previous work order if exists
       if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
         workOrders.push(completeWorkOrder(currentWorkOrder));
       }
 
-      // Start new work order (including work order 0 - blank entries)
-      // Note: We allow duplicate work order numbers because the same work order
-      // can appear in different shifts/teams and should be tracked separately
-      // Work order 0 (blank) is allowed and will be saved as a separate entry
+      // Start new work order block
+      // Use work order number from column A (can be 0 for blank entries)
+      // If column A is empty/null but column B has a value, use 0 as the work order number
+      const woNumber = workOrderNumber !== null ? workOrderNumber : 0;
+      
       currentWorkOrder = {
-        work_order_number: workOrderNumber,
-        good_production: parseNumericValue(colB),
+        work_order_number: woNumber,
+        good_production: goodProduction,
         lhe: parseNumericValue(colC),
         spoilage_percent: parseNumericValue(colD),
         make_ready: { start_time: null, end_time: null },
         production: { start_time: null, end_time: null },
       };
       currentWorkOrderStartRow = i;
-      if (workOrderNumber === 0) {
-        console.log(`Found blank work order (0) at row ${i + 1} - will be saved as separate entry`);
+      if (woNumber === 0) {
+        console.log(`Found blank work order (0) at row ${i + 1} with Good Production: ${goodProduction} - will be saved as separate entry`);
       } else {
-        console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
+        console.log(`Found work order ${woNumber} at row ${i + 1} with Good Production: ${goodProduction}`);
       }
       
       // Check if this row also has "Make Ready" in column F (same row as work order number)
@@ -487,7 +491,7 @@ export function parseWorkOrders(
       const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
       if (colFValue.includes("make ready")) {
         const timeRange = extractTimeRange(row);
-        console.log(`Make Ready times for WO ${workOrderNumber} (same row as WO number):`, {
+        console.log(`Make Ready times for WO ${woNumber} (same row as WO number):`, {
           start: timeRange.start_time,
           end: timeRange.end_time,
           rowG: row["G"],
