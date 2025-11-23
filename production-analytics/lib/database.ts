@@ -1183,3 +1183,346 @@ export function getTrainingRecommendation(category: string): string {
   return `Training on ${category} prevention and troubleshooting`;
 }
 
+export interface DowntimeTrend {
+  press: string;
+  category: string;
+  week_start_date: string; // YYYY-MM-DD format
+  total_minutes: number;
+  pct_change: number; // Week-over-week percentage change
+  previous_week_minutes: number;
+}
+
+/**
+ * Gets downtime trends by calling the get_downtime_trends Supabase function
+ * Returns week-over-week percentage changes for downtime categories
+ * 
+ * @param filters - Filter options for the query
+ * @returns Array of DowntimeTrend objects, filtered to show only increasing trends (pct_change > 0)
+ * 
+ * @example
+ * const trends = await getDowntimeTrends({
+ *   press: "LP05",
+ *   weeksLookback: 8
+ * });
+ */
+export async function getDowntimeTrends(filters: {
+  press?: string;
+  weeksLookback?: number;
+}): Promise<DowntimeTrend[]> {
+  try {
+    const weeksLookback = filters.weeksLookback ?? 8;
+
+    // Prepare parameters for the RPC function
+    const rpcParams: {
+      press_filter?: string;
+      weeks_lookback: number;
+    } = {
+      weeks_lookback: weeksLookback,
+    };
+
+    if (filters.press) {
+      rpcParams.press_filter = filters.press;
+    }
+
+    // Call the Supabase RPC function
+    const { data, error } = await supabase.rpc("get_downtime_trends", rpcParams);
+
+    if (error) {
+      console.error("Error calling get_downtime_trends RPC function:", error);
+      return [];
+    }
+
+    if (!data || !Array.isArray(data)) {
+      return [];
+    }
+
+    // Map the raw RPC response to DowntimeTrend interface
+    // Filter to show only increasing trends (pct_change > 0)
+    const trends: DowntimeTrend[] = data
+      .filter((item: unknown) => {
+        // Type guard to ensure item has the expected structure
+        if (typeof item !== "object" || item === null) {
+          return false;
+        }
+        const trendItem = item as Record<string, unknown>;
+        const pctChange = typeof trendItem.pct_change === "number" ? trendItem.pct_change : 0;
+        // Only include trends with positive percentage change (increasing)
+        return pctChange > 0;
+      })
+      .map((item: unknown) => {
+        const trendItem = item as Record<string, unknown>;
+        return {
+          press: String(trendItem.press || ""),
+          category: String(trendItem.category || ""),
+          week_start_date: String(trendItem.week_start_date || ""),
+          total_minutes: typeof trendItem.total_minutes === "number" ? trendItem.total_minutes : 0,
+          pct_change: typeof trendItem.pct_change === "number" ? trendItem.pct_change : 0,
+          previous_week_minutes:
+            typeof trendItem.previous_week_minutes === "number" ? trendItem.previous_week_minutes : 0,
+        } as DowntimeTrend;
+      });
+
+    // Sort by pct_change descending (largest increases first)
+    trends.sort((a, b) => b.pct_change - a.pct_change);
+
+    return trends;
+  } catch (error) {
+    console.error("Exception calling get_downtime_trends RPC function:", error);
+    return [];
+  }
+}
+
+export interface MaintenanceAlert {
+  press: string;
+  category: string;
+  current_week_minutes: number;
+  trend_pct: number; // Percentage change from previous week
+  severity: "urgent" | "warning" | "monitor";
+  recommendation: string;
+}
+
+/**
+ * Gets maintenance alerts based on downtime events
+ * Compares current week with previous week to identify trends
+ * Categorizes alerts by severity based on minutes and trend
+ * 
+ * @param filters - Filter options for the query
+ * @returns Array of MaintenanceAlert objects, ordered by severity and minutes
+ * 
+ * @example
+ * const alerts = await getMaintenanceAlerts({
+ *   press: "LP05"
+ * });
+ */
+export async function getMaintenanceAlerts(filters: {
+  press?: string;
+}): Promise<MaintenanceAlert[]> {
+  try {
+    // Calculate date ranges for current week and previous week
+    const today = new Date();
+    const currentWeekStart = new Date(today);
+    currentWeekStart.setDate(today.getDate() - today.getDay()); // Start of current week (Sunday)
+    currentWeekStart.setHours(0, 0, 0, 0);
+    
+    const currentWeekEnd = new Date(currentWeekStart);
+    currentWeekEnd.setDate(currentWeekStart.getDate() + 6); // End of current week (Saturday)
+    currentWeekEnd.setHours(23, 59, 59, 999);
+    
+    const previousWeekStart = new Date(currentWeekStart);
+    previousWeekStart.setDate(currentWeekStart.getDate() - 7);
+    
+    const previousWeekEnd = new Date(currentWeekStart);
+    previousWeekEnd.setDate(currentWeekStart.getDate() - 1);
+    previousWeekEnd.setHours(23, 59, 59, 999);
+
+    // Format dates for PostgreSQL
+    const formatDate = (date: Date) => date.toISOString().split("T")[0];
+    const currentWeekStartStr = formatDate(currentWeekStart);
+    const currentWeekEndStr = formatDate(currentWeekEnd);
+    const previousWeekStartStr = formatDate(previousWeekStart);
+    const previousWeekEndStr = formatDate(previousWeekEnd);
+
+    // Query current week downtime events
+    let currentWeekQuery = supabase
+      .from("downtime_events")
+      .select("press, category, minutes")
+      .gte("date", currentWeekStartStr)
+      .lte("date", currentWeekEndStr);
+
+    if (filters.press) {
+      currentWeekQuery = currentWeekQuery.eq("press", filters.press);
+    }
+
+    const { data: currentWeekData, error: currentWeekError } = await currentWeekQuery;
+
+    if (currentWeekError) {
+      console.error("Error fetching current week downtime events:", currentWeekError);
+      return [];
+    }
+
+    // Query previous week downtime events
+    let previousWeekQuery = supabase
+      .from("downtime_events")
+      .select("press, category, minutes")
+      .gte("date", previousWeekStartStr)
+      .lte("date", previousWeekEndStr);
+
+    if (filters.press) {
+      previousWeekQuery = previousWeekQuery.eq("press", filters.press);
+    }
+
+    const { data: previousWeekData, error: previousWeekError } = await previousWeekQuery;
+
+    if (previousWeekError) {
+      console.error("Error fetching previous week downtime events:", previousWeekError);
+      return [];
+    }
+
+    // Aggregate current week data by press and category
+    const currentWeekMap = new Map<string, number>(); // key: "press_category", value: total minutes
+    if (currentWeekData) {
+      currentWeekData.forEach((event) => {
+        const key = `${event.press}_${event.category}`;
+        const currentMinutes = currentWeekMap.get(key) || 0;
+        currentWeekMap.set(key, currentMinutes + (event.minutes || 0));
+      });
+    }
+
+    // Aggregate previous week data by press and category
+    const previousWeekMap = new Map<string, number>(); // key: "press_category", value: total minutes
+    if (previousWeekData) {
+      previousWeekData.forEach((event) => {
+        const key = `${event.press}_${event.category}`;
+        const currentMinutes = previousWeekMap.get(key) || 0;
+        previousWeekMap.set(key, currentMinutes + (event.minutes || 0));
+      });
+    }
+
+    // Create alerts with trend calculation
+    const alerts: MaintenanceAlert[] = [];
+    const allKeys = new Set([...currentWeekMap.keys(), ...previousWeekMap.keys()]);
+
+    allKeys.forEach((key) => {
+      const [press, category] = key.split("_");
+      const currentMinutes = currentWeekMap.get(key) || 0;
+      const previousMinutes = previousWeekMap.get(key) || 0;
+
+      // Calculate trend percentage
+      let trendPct = 0;
+      if (previousMinutes > 0) {
+        trendPct = ((currentMinutes - previousMinutes) / previousMinutes) * 100;
+      } else if (currentMinutes > 0) {
+        trendPct = 100; // New issue, 100% increase
+      }
+
+      // Determine severity
+      // Urgent: >120 minutes current week OR >50% increase with >60 minutes
+      // Warning: >60 minutes current week OR >30% increase with >30 minutes
+      // Monitor: everything else
+      let severity: "urgent" | "warning" | "monitor" = "monitor";
+      if (currentMinutes > 120 || (trendPct > 50 && currentMinutes > 60)) {
+        severity = "urgent";
+      } else if (currentMinutes > 60 || (trendPct > 30 && currentMinutes > 30)) {
+        severity = "warning";
+      }
+
+      // Get recommendation
+      const recommendation = getTrainingRecommendation(category);
+
+      alerts.push({
+        press: press || "",
+        category: category || "",
+        current_week_minutes: currentMinutes,
+        trend_pct: trendPct,
+        severity,
+        recommendation,
+      });
+    });
+
+    // Sort by severity (urgent first) then by current_week_minutes descending
+    const severityOrder = { urgent: 0, warning: 1, monitor: 2 };
+    alerts.sort((a, b) => {
+      const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
+      if (severityDiff !== 0) return severityDiff;
+      return b.current_week_minutes - a.current_week_minutes;
+    });
+
+    return alerts;
+  } catch (error) {
+    console.error("Exception fetching maintenance alerts:", error);
+    return [];
+  }
+}
+
+export interface WeeklyDowntimeData {
+  week_start_date: string; // YYYY-MM-DD format
+  total_minutes: number;
+}
+
+/**
+ * Gets weekly downtime data for a specific press and category
+ * Groups downtime events by week for trend analysis
+ * 
+ * @param press - Press code (e.g., "LP05")
+ * @param category - Downtime category (e.g., "Changing Bulks")
+ * @param weeksLookback - Number of weeks to look back (default: 12)
+ * @returns Array of WeeklyDowntimeData objects, sorted by week_start_date ascending
+ * 
+ * @example
+ * const weeklyData = await getWeeklyDowntimeData("LP05", "Changing Bulks", 12);
+ * weeklyData.forEach(week => {
+ *   console.log(`${week.week_start_date}: ${week.total_minutes} minutes`);
+ * });
+ */
+export async function getWeeklyDowntimeData(
+  press: string,
+  category: string,
+  weeksLookback: number = 12
+): Promise<WeeklyDowntimeData[]> {
+  try {
+    // Calculate date range
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - (weeksLookback * 7));
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = new Date(today);
+    endDate.setHours(23, 59, 59, 999);
+
+    // Format dates for PostgreSQL
+    const formatDate = (date: Date) => date.toISOString().split("T")[0];
+    const startDateStr = formatDate(startDate);
+    const endDateStr = formatDate(endDate);
+
+    // Query downtime events
+    const { data, error } = await supabase
+      .from("downtime_events")
+      .select("date, minutes")
+      .eq("press", press)
+      .eq("category", category)
+      .gte("date", startDateStr)
+      .lte("date", endDateStr)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching weekly downtime data:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Group by week (week starts on Sunday)
+    const weekMap = new Map<string, number>(); // key: week_start_date (YYYY-MM-DD), value: total minutes
+
+    data.forEach((event) => {
+      if (!event.date) return;
+
+      const eventDate = new Date(event.date);
+      // Calculate week start (Sunday)
+      const dayOfWeek = eventDate.getDay();
+      const weekStart = new Date(eventDate);
+      weekStart.setDate(eventDate.getDate() - dayOfWeek);
+      weekStart.setHours(0, 0, 0, 0);
+
+      const weekStartStr = formatDate(weekStart);
+      const currentMinutes = weekMap.get(weekStartStr) || 0;
+      weekMap.set(weekStartStr, currentMinutes + (event.minutes || 0));
+    });
+
+    // Convert to array and sort by week_start_date
+    const weeklyData: WeeklyDowntimeData[] = Array.from(weekMap.entries())
+      .map(([week_start_date, total_minutes]) => ({
+        week_start_date,
+        total_minutes,
+      }))
+      .sort((a, b) => a.week_start_date.localeCompare(b.week_start_date));
+
+    return weeklyData;
+  } catch (error) {
+    console.error("Exception fetching weekly downtime data:", error);
+    return [];
+  }
+}
+
