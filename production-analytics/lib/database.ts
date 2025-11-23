@@ -1816,3 +1816,225 @@ export async function searchWorkOrder(
   }
 }
 
+/**
+ * Press Targets Interface
+ */
+export interface PressTarget {
+  press: string;
+  target_run_speed: number;
+  target_efficiency_pct: number;
+  target_spoilage_pct: number;
+}
+
+/**
+ * Get all press targets from the database
+ * @returns Array of press targets
+ */
+export async function getPressTargets(): Promise<PressTarget[]> {
+  try {
+    const { data, error } = await supabase
+      .from("press_targets")
+      .select("*")
+      .order("press", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching press targets:", error);
+      throw error;
+    }
+
+    return (data || []).map((target) => ({
+      press: target.press,
+      target_run_speed: target.target_run_speed || 0,
+      target_efficiency_pct: target.target_efficiency_pct || 0,
+      target_spoilage_pct: target.target_spoilage_pct || 0,
+    }));
+  } catch (error) {
+    console.error("Exception fetching press targets:", error);
+    throw error;
+  }
+}
+
+/**
+ * Save press targets to the database
+ * Uses upsert to insert or update existing targets
+ * @param targets Array of press targets to save
+ */
+export async function savePressTargets(targets: PressTarget[]): Promise<void> {
+  try {
+    // Prepare data for upsert
+    const upsertData = targets.map((target) => ({
+      press: target.press,
+      target_run_speed: target.target_run_speed,
+      target_efficiency_pct: target.target_efficiency_pct,
+      target_spoilage_pct: target.target_spoilage_pct,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { error } = await supabase
+      .from("press_targets")
+      .upsert(upsertData, {
+        onConflict: "press",
+        ignoreDuplicates: false,
+      });
+
+    if (error) {
+      console.error("Error saving press targets:", error);
+      throw error;
+    }
+  } catch (error) {
+    console.error("Exception saving press targets:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update targets for a specific press
+ * @param press Press code (e.g., 'LA01', 'LP03')
+ * @param targets Partial target object with fields to update
+ * @returns Updated press target or null if not found
+ */
+export async function updatePressTarget(
+  press: string,
+  targets: Partial<Omit<PressTarget, "press">>
+): Promise<PressTarget | null> {
+  try {
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (targets.target_run_speed !== undefined) {
+      updateData.target_run_speed = targets.target_run_speed;
+    }
+    if (targets.target_efficiency_pct !== undefined) {
+      updateData.target_efficiency_pct = targets.target_efficiency_pct;
+    }
+    if (targets.target_spoilage_pct !== undefined) {
+      updateData.target_spoilage_pct = targets.target_spoilage_pct;
+    }
+
+    const { data, error } = await supabase
+      .from("press_targets")
+      .update(updateData)
+      .eq("press", press)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating press target:", error);
+      throw error;
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    return {
+      press: data.press,
+      target_run_speed: data.target_run_speed || 0,
+      target_efficiency_pct: data.target_efficiency_pct || 0,
+      target_spoilage_pct: data.target_spoilage_pct || 0,
+    };
+  } catch (error) {
+    console.error("Exception updating press target:", error);
+    throw error;
+  }
+}
+
+/**
+ * Target Comparison Interface
+ * Compares actual performance against targets
+ */
+export interface TargetComparison {
+  press: string;
+  date: string;
+  // Actual values from daily_production_summary
+  actual_run_speed: number;
+  actual_efficiency_pct: number;
+  actual_spoilage_pct: number;
+  // Target values from press_targets
+  target_run_speed: number;
+  target_efficiency_pct: number;
+  target_spoilage_pct: number;
+  // Variance calculations
+  run_speed_variance: number; // actual - target
+  run_speed_variance_pct: number; // ((actual - target) / target) * 100
+  efficiency_variance: number; // actual - target
+  efficiency_variance_pct: number; // ((actual - target) / target) * 100
+  spoilage_variance: number; // actual - target
+  spoilage_variance_pct: number; // ((actual - target) / target) * 100
+}
+
+/**
+ * Get target comparison for a specific press and date
+ * Joins daily_production_summary with press_targets to calculate variance
+ * @param press Press code (e.g., 'LA01', 'LP03')
+ * @param date Date in DD-MM-YYYY format
+ * @returns Target comparison data or null if no data found
+ */
+export async function getTargetComparison(
+  press: string,
+  date: string
+): Promise<TargetComparison | null> {
+  try {
+    // First, get the daily production data
+    const productionData = await getDailyProduction(date);
+    const dailyData = productionData.find((row) => row.press === press);
+
+    if (!dailyData) {
+      return null; // No production data for this press/date
+    }
+
+    // Get the press target
+    const targets = await getPressTargets();
+    const target = targets.find((t) => t.press === press);
+
+    if (!target) {
+      return null; // No target data for this press
+    }
+
+    // Calculate actual values
+    const actualRunSpeed = dailyData.avg_run_speed || 0;
+    const actualEfficiency = dailyData.efficiency_pct || 0;
+    const actualSpoilage = dailyData.avg_spoilage_pct || 0;
+
+    // Calculate variances
+    const runSpeedVariance = actualRunSpeed - target.target_run_speed;
+    const runSpeedVariancePct =
+      target.target_run_speed > 0
+        ? (runSpeedVariance / target.target_run_speed) * 100
+        : 0;
+
+    const efficiencyVariance = actualEfficiency - target.target_efficiency_pct;
+    const efficiencyVariancePct =
+      target.target_efficiency_pct > 0
+        ? (efficiencyVariance / target.target_efficiency_pct) * 100
+        : 0;
+
+    const spoilageVariance = actualSpoilage - target.target_spoilage_pct;
+    const spoilageVariancePct =
+      target.target_spoilage_pct > 0
+        ? (spoilageVariance / target.target_spoilage_pct) * 100
+        : 0;
+
+    return {
+      press,
+      date,
+      actual_run_speed: actualRunSpeed,
+      actual_efficiency_pct: actualEfficiency,
+      actual_spoilage_pct: actualSpoilage,
+      target_run_speed: target.target_run_speed,
+      target_efficiency_pct: target.target_efficiency_pct,
+      target_spoilage_pct: target.target_spoilage_pct,
+      run_speed_variance: runSpeedVariance,
+      run_speed_variance_pct: runSpeedVariancePct,
+      efficiency_variance: efficiencyVariance,
+      efficiency_variance_pct: efficiencyVariancePct,
+      spoilage_variance: spoilageVariance,
+      spoilage_variance_pct: spoilageVariancePct,
+    };
+  } catch (error) {
+    console.error("Exception getting target comparison:", error);
+    throw error;
+  }
+}
+

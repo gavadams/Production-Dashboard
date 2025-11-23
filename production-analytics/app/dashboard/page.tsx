@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Calendar, TrendingUp, AlertCircle, Activity, Database } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
-import { getDailyProduction, getTopDowntimeIssues } from "@/lib/database";
+import { getDailyProduction, getTopDowntimeIssues, getPressTargets } from "@/lib/database";
 import { determinePressStatus } from "@/lib/utils";
 import { formatErrorMessage } from "@/lib/errorMessages";
 import Link from "next/link";
@@ -26,6 +26,14 @@ interface PressData {
   avgRunSpeed: number;
   avgSpoilage: number;
   totalDowntime: number;
+  efficiencyPct?: number;
+  // Target comparison data
+  targetRunSpeed?: number;
+  targetEfficiencyPct?: number;
+  targetSpoilagePct?: number;
+  speedVariancePct?: number;
+  efficiencyVariance?: number;
+  spoilageVariance?: number;
 }
 
 const PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
@@ -54,6 +62,10 @@ export default function DashboardPage() {
       // Convert selectedDate (YYYY-MM-DD) to DD-MM-YYYY format for getDailyProduction
       const dateParts = selectedDate.split("-");
       const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+
+      // Fetch press targets for comparison
+      const pressTargets = await getPressTargets();
+      const targetsMap = new Map(pressTargets.map((t) => [t.press, t]));
 
       // Query daily production summary using the helper function
       const productionData = await getDailyProduction(formattedDate);
@@ -91,6 +103,7 @@ export default function DashboardPage() {
           avgRunSpeed: 0,
           avgSpoilage: 0,
           totalDowntime: downtimeByPress[press] || 0,
+          efficiencyPct: 0,
         });
       });
 
@@ -105,13 +118,44 @@ export default function DashboardPage() {
           total_downtime_minutes: totalDowntime,
         });
 
+        // Get target for this press
+        const target = targetsMap.get(row.press);
+        const actualRunSpeed = row.avg_run_speed || 0;
+        const actualEfficiency = row.efficiency_pct || 0;
+        const actualSpoilage = row.avg_spoilage_pct || 0;
+
+        // Calculate variances
+        let speedVariancePct: number | undefined;
+        let efficiencyVariance: number | undefined;
+        let spoilageVariance: number | undefined;
+
+        if (target) {
+          // Speed variance: (actual - target) / target * 100
+          if (target.target_run_speed > 0) {
+            speedVariancePct = ((actualRunSpeed - target.target_run_speed) / target.target_run_speed) * 100;
+          }
+
+          // Efficiency variance: actual - target
+          efficiencyVariance = actualEfficiency - target.target_efficiency_pct;
+
+          // Spoilage variance: actual - target
+          spoilageVariance = actualSpoilage - target.target_spoilage_pct;
+        }
+
         dataMap.set(row.press, {
           press: row.press,
           status,
           productionTotal: row.total_production || 0,
-          avgRunSpeed: row.avg_run_speed || 0,
-          avgSpoilage: row.avg_spoilage_pct || 0,
+          avgRunSpeed: actualRunSpeed,
+          avgSpoilage: actualSpoilage,
           totalDowntime,
+          efficiencyPct: actualEfficiency,
+          targetRunSpeed: target?.target_run_speed,
+          targetEfficiencyPct: target?.target_efficiency_pct,
+          targetSpoilagePct: target?.target_spoilage_pct,
+          speedVariancePct,
+          efficiencyVariance,
+          spoilageVariance,
         });
       });
 
@@ -167,6 +211,40 @@ export default function DashboardPage() {
       month: "short",
       year: "numeric",
     });
+  };
+
+  // Helper function to get variance color
+  const getVarianceColor = (variancePct: number | undefined, isSpoilage: boolean = false): string => {
+    if (variancePct === undefined) return "text-gray-600 dark:text-gray-400";
+    
+    // For spoilage, lower is better (negative variance is good)
+    // For speed/efficiency, higher is better (positive variance is good)
+    const isGood = isSpoilage ? variancePct <= 0 : variancePct >= 0;
+    const isWithinThreshold = Math.abs(variancePct) <= 10;
+
+    if (isGood && isWithinThreshold) {
+      return "text-green-600 dark:text-green-400";
+    } else if (isWithinThreshold) {
+      return "text-yellow-600 dark:text-yellow-400";
+    } else {
+      return "text-red-600 dark:text-red-400";
+    }
+  };
+
+  // Helper function to format variance text
+  const formatVarianceText = (
+    actual: number,
+    variancePct: number | undefined,
+    unit: string,
+    decimals: number = 1
+  ): string => {
+    if (variancePct === undefined) {
+      return `${actual.toLocaleString(undefined, { maximumFractionDigits: decimals })} ${unit}`;
+    }
+
+    const sign = variancePct >= 0 ? "+" : "";
+    const arrow = variancePct >= 0 ? "↑" : "↓";
+    return `${actual.toLocaleString(undefined, { maximumFractionDigits: decimals })} ${unit} (${sign}${variancePct.toFixed(1)}% vs target) ${arrow}`;
   };
 
   return (
@@ -307,34 +385,92 @@ export default function DashboardPage() {
                   </span>
                 </div>
 
-                {/* Run Speed */}
+                {/* Run Speed with Target Comparison */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                     <TrendingUp className="h-4 w-4" />
                     <span className="text-sm">Avg Run Speed</span>
                   </div>
-                  <span className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {press.avgRunSpeed.toFixed(1)} <span className="text-sm font-normal">/hr</span>
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-lg font-semibold ${getVarianceColor(press.speedVariancePct)}`}>
+                      {formatVarianceText(press.avgRunSpeed, press.speedVariancePct, "/hr", 1)}
+                    </span>
+                    {press.targetRunSpeed && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Target: {press.targetRunSpeed.toLocaleString()} /hr
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* Spoilage */}
+                {/* Efficiency with Target Comparison */}
+                {press.efficiencyPct !== undefined && press.efficiencyPct > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                      <Activity className="h-4 w-4" />
+                      <span className="text-sm">Efficiency</span>
+                    </div>
+                    <div className="text-right">
+                      {press.efficiencyVariance !== undefined ? (
+                        <>
+                          <span className={`text-lg font-semibold ${getVarianceColor(press.efficiencyVariance)}`}>
+                            {press.efficiencyPct.toFixed(1)}%
+                            {press.efficiencyVariance >= 0 ? " ↑" : " ↓"}
+                            <span className="text-xs ml-1">
+                              ({press.efficiencyVariance >= 0 ? "+" : ""}{press.efficiencyVariance.toFixed(1)}% vs target)
+                            </span>
+                          </span>
+                          {press.targetEfficiencyPct && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              Target: {press.targetEfficiencyPct.toFixed(1)}%
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                          {press.efficiencyPct.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Spoilage with Target Comparison */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                     <AlertCircle className="h-4 w-4" />
                     <span className="text-sm">Spoilage %</span>
                   </div>
-                  <span
-                    className={`text-lg font-semibold ${
-                      press.avgSpoilage > 2
-                        ? "text-red-600 dark:text-red-400"
-                        : press.avgSpoilage > 1
-                        ? "text-yellow-600 dark:text-yellow-400"
-                        : "text-gray-900 dark:text-white"
-                    }`}
-                  >
-                    {press.avgSpoilage.toFixed(2)}%
-                  </span>
+                  <div className="text-right">
+                    {press.spoilageVariance !== undefined ? (
+                      <>
+                        <span className={`text-lg font-semibold ${getVarianceColor(press.spoilageVariance, true)}`}>
+                          {press.avgSpoilage.toFixed(2)}%
+                          {press.spoilageVariance <= 0 ? " ↓" : " ↑"}
+                          <span className="text-xs ml-1">
+                            ({press.spoilageVariance >= 0 ? "+" : ""}{press.spoilageVariance.toFixed(2)}% vs target)
+                          </span>
+                        </span>
+                        {press.targetSpoilagePct && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Target: {press.targetSpoilagePct.toFixed(2)}%
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span
+                        className={`text-lg font-semibold ${
+                          press.avgSpoilage > 2
+                            ? "text-red-600 dark:text-red-400"
+                            : press.avgSpoilage > 1
+                            ? "text-yellow-600 dark:text-yellow-400"
+                            : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        {press.avgSpoilage.toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Downtime */}
