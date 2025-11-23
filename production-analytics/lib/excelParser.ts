@@ -1275,14 +1275,13 @@ export async function parseProductionReport(
       throw new Error("No work orders found in Excel file - cannot create production report");
     }
 
-    // Step 5: Find production row indices and work order start row indices for each work order
-    // We need to match work orders to their production rows in order to handle duplicates
-    const productionRowIndices = findProductionRowIndicesForWorkOrders(excelData, workOrders);
+    // Step 5: Find work order start row indices for each work order
+    // This is where column B has Good Production value (the Make Ready row)
+    // We use this to parse downtime/spoilage events from the entire work order block
     const workOrderStartRowIndices = findWorkOrderStartRowIndices(excelData, workOrders);
 
     // Step 6: Enrich each work order with downtime, spoilage, shift, and run speed
     const workOrdersWithDetails: WorkOrderWithDetails[] = workOrders.map((workOrder, index) => {
-      const productionRowIndex = productionRowIndices[index] ?? -1;
       const workOrderStartRowIndex = workOrderStartRowIndices[index] ?? -1;
 
       // Parse downtime and spoilage events from the work order start row until the next work order block
