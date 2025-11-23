@@ -476,6 +476,24 @@ export function parseWorkOrders(
       };
       currentWorkOrderStartRow = i;
       console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
+      
+      // Check if this row also has "Make Ready" in column F (same row as work order number)
+      const colF = row["F"];
+      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+      if (colFValue.includes("make ready")) {
+        const timeRange = extractTimeRange(row);
+        console.log(`Make Ready times for WO ${workOrderNumber} (same row as WO number):`, {
+          start: timeRange.start_time,
+          end: timeRange.end_time,
+          rowG: row["G"],
+          rowH: row["H"],
+          colF: colF
+        });
+        if (currentWorkOrder.make_ready) {
+          currentWorkOrder.make_ready.start_time = timeRange.start_time;
+          currentWorkOrder.make_ready.end_time = timeRange.end_time;
+        }
+      }
     } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
       // We're in a work order section, look for Make Ready and Production rows
       // Column F contains both "Make Ready" and "Production" text
@@ -485,32 +503,38 @@ export function parseWorkOrders(
       const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
       
       // Check column F for "Production" or "Make Ready"
-      if (colFValue === "production") {
+      // Use includes() to be more flexible with spacing/casing
+      if (colFValue.includes("production")) {
         // Found Production row - extract times from columns G and H
         const timeRange = extractTimeRange(row);
         console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, {
           start: timeRange.start_time,
           end: timeRange.end_time,
           rowG: row["G"],
-          rowH: row["H"]
+          rowH: row["H"],
+          colF: colF
         });
         if (currentWorkOrder.production) {
           currentWorkOrder.production.start_time = timeRange.start_time;
           currentWorkOrder.production.end_time = timeRange.end_time;
         }
-      } else if (colFValue === "make ready") {
+      } else if (colFValue.includes("make ready")) {
         // Found Make Ready row - extract times from columns G and H
         const timeRange = extractTimeRange(row);
         console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, {
           start: timeRange.start_time,
           end: timeRange.end_time,
           rowG: row["G"],
-          rowH: row["H"]
+          rowH: row["H"],
+          colF: colF
         });
         if (currentWorkOrder.make_ready) {
           currentWorkOrder.make_ready.start_time = timeRange.start_time;
           currentWorkOrder.make_ready.end_time = timeRange.end_time;
         }
+      } else if (colFValue.length > 0) {
+        // Log any other non-empty values in column F to help debug
+        console.log(`Row ${i + 1} has non-empty value in column F but not recognized: "${colF}" (normalized: "${colFValue}")`);
       }
 
       // Continue processing rows until we find the next work order

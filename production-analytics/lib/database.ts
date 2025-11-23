@@ -539,7 +539,9 @@ export async function saveProductionData(
       const productionRunId = productionRun.id;
 
       // Step 2: Insert downtime events with denormalized data
+      console.log(`Work order ${workOrder.work_order_number}: ${workOrder.downtime?.length || 0} downtime events, ${workOrder.spoilage?.length || 0} spoilage events`);
       if (workOrder.downtime && workOrder.downtime.length > 0) {
+        console.log(`Inserting ${workOrder.downtime.length} downtime events for work order ${workOrder.work_order_number}`);
         const downtimeCount = await insertDowntimeEvents(
           productionRunId,
           workOrder.downtime,
@@ -553,16 +555,20 @@ export async function saveProductionData(
           }
         );
         result.recordsCreated.downtimeEvents += downtimeCount;
+        console.log(`Inserted ${downtimeCount} downtime events for work order ${workOrder.work_order_number}`);
 
         if (downtimeCount === 0 && workOrder.downtime.length > 0) {
           result.errors.push(
             `Failed to insert downtime events for work order ${workOrder.work_order_number || "unknown"}`
           );
         }
+      } else {
+        console.log(`No downtime events to insert for work order ${workOrder.work_order_number}`);
       }
 
       // Step 3: Insert spoilage events with denormalized data
       if (workOrder.spoilage && workOrder.spoilage.length > 0) {
+        console.log(`Inserting ${workOrder.spoilage.length} spoilage events for work order ${workOrder.work_order_number}`);
         const spoilageCount = await insertSpoilageEvents(
           productionRunId,
           workOrder.spoilage,
@@ -576,12 +582,15 @@ export async function saveProductionData(
           }
         );
         result.recordsCreated.spoilageEvents += spoilageCount;
+        console.log(`Inserted ${spoilageCount} spoilage events for work order ${workOrder.work_order_number}`);
 
         if (spoilageCount === 0 && workOrder.spoilage.length > 0) {
           result.errors.push(
             `Failed to insert spoilage events for work order ${workOrder.work_order_number || "unknown"}`
           );
         }
+      } else {
+        console.log(`No spoilage events to insert for work order ${workOrder.work_order_number}`);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
