@@ -56,32 +56,6 @@ export default function MaintenancePage() {
   const warnings = alerts.filter((alert) => alert.severity === "warning");
   const monitor = alerts.filter((alert) => alert.severity === "monitor");
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case "urgent":
-        return "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800";
-      case "warning":
-        return "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800";
-      case "monitor":
-        return "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800";
-      default:
-        return "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700";
-    }
-  };
-
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
-      case "urgent":
-        return <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />;
-      case "warning":
-        return <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />;
-      case "monitor":
-        return <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />;
-      default:
-        return null;
-    }
-  };
-
   const getTrendColor = (trend: number) => {
     if (trend > 0) {
       return "text-red-600 dark:text-red-400";
