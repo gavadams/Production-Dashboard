@@ -144,6 +144,8 @@ export default function ReportsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // Clean up the URL object to prevent memory leaks
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -676,9 +678,10 @@ export default function ReportsPage() {
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
-                                label={(props: { percent: number; name?: string }) => {
+                                label={(props: { percent?: number; name?: string }) => {
                                   const name = props.name || "";
-                                  return `${name}: ${(props.percent * 100).toFixed(0)}%`;
+                                  const percent = props.percent || 0;
+                                  return `${name}: ${(percent * 100).toFixed(0)}%`;
                                 }}
                                 outerRadius={80}
                                 fill="#8884d8"

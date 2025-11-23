@@ -1439,19 +1439,6 @@ export interface WeeklyDowntimeData {
   total_minutes: number;
 }
 
-export interface ProductionRunReport {
-  id: string;
-  date: string; // DD-MM-YYYY format
-  press: string;
-  shift: string;
-  team: string;
-  work_order: string | null;
-  good_production: number;
-  calculated_run_speed: number;
-  spoilage_percentage: number;
-  make_ready_minutes: number;
-}
-
 /**
  * Gets weekly downtime data for a specific press and category
  * Groups downtime events by week for trend analysis
