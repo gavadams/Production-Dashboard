@@ -478,41 +478,43 @@ export function parseWorkOrders(
       console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
     } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
       // We're in a work order section, look for Make Ready and Production rows
-      // Search multiple columns (E, F, etc.) for "Make Ready" or "Production" text
-      // Based on the Excel layout, "Make Ready" might be in the Average Run Speed column (E)
-      let foundActivityType: "make_ready" | "production" | null = null;
+      // Column F contains "Production" text for production rows
+      // Column E contains "Make Ready" text (e.g., "44.00 Make Ready")
+      // Times are always in columns G (Start) and H (End)
       
-      // Check columns E, F, and other common columns for activity type
-      const activityColumns = ["E", "F", "D", "C", "B"];
-      for (const col of activityColumns) {
-        const colValue = row[col];
-        if (colValue !== null && colValue !== undefined) {
-          const colValueStr = String(colValue).trim().toLowerCase();
-          if (colValueStr.includes("make ready")) {
-            foundActivityType = "make_ready";
-            break;
-          } else if (colValueStr.includes("production")) {
-            foundActivityType = "production";
-            break;
-          }
-        }
-      }
-
-      if (foundActivityType === "make_ready") {
-        // Found Make Ready row
+      const colF = row["F"];
+      const colE = row["E"];
+      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+      const colEValue = colE !== null && colE !== undefined ? String(colE).trim().toLowerCase() : "";
+      
+      // Check column F for "Production"
+      if (colFValue === "production") {
+        // Found Production row - extract times from columns G and H
+        // Use the extractTime helper function from extractTimeRange
         const timeRange = extractTimeRange(row);
-        console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, timeRange, "Row data G:", row["G"], "H:", row["H"]);
-        if (currentWorkOrder.make_ready) {
-          currentWorkOrder.make_ready.start_time = timeRange.start_time;
-          currentWorkOrder.make_ready.end_time = timeRange.end_time;
-        }
-      } else if (foundActivityType === "production") {
-        // Found Production row
-        const timeRange = extractTimeRange(row);
-        console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, timeRange, "Row data G:", row["G"], "H:", row["H"]);
+        console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, {
+          start: timeRange.start_time,
+          end: timeRange.end_time,
+          rowG: row["G"],
+          rowH: row["H"]
+        });
         if (currentWorkOrder.production) {
           currentWorkOrder.production.start_time = timeRange.start_time;
           currentWorkOrder.production.end_time = timeRange.end_time;
+        }
+      } else if (colEValue.includes("make ready")) {
+        // Found Make Ready row - extract times from columns G and H
+        // Use the extractTime helper function from extractTimeRange
+        const timeRange = extractTimeRange(row);
+        console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, {
+          start: timeRange.start_time,
+          end: timeRange.end_time,
+          rowG: row["G"],
+          rowH: row["H"]
+        });
+        if (currentWorkOrder.make_ready) {
+          currentWorkOrder.make_ready.start_time = timeRange.start_time;
+          currentWorkOrder.make_ready.end_time = timeRange.end_time;
         }
       }
 
@@ -610,31 +612,12 @@ function extractTimeRange(row: Record<string, unknown>): WorkOrderTimeRange {
     return null;
   };
 
-  // First, try to get Start from column G and End from column H (most common layout)
+  // Always get Start from column G and End from column H (per user requirements)
   const startValue = row["G"];
   const endValue = row["H"];
 
   timeRange.start_time = extractTime(startValue);
   timeRange.end_time = extractTime(endValue);
-
-  // If we didn't find times in G/H, search other columns for flexibility
-  if (timeRange.start_time === null || timeRange.end_time === null) {
-    const timeColumns = ["F", "I", "J", "K", "L"];
-    for (let i = 0; i < timeColumns.length; i++) {
-      const col = timeColumns[i];
-      const value = row[col];
-      const extractedTime = extractTime(value);
-
-      if (extractedTime) {
-        if (timeRange.start_time === null) {
-          timeRange.start_time = extractedTime;
-        } else if (timeRange.end_time === null) {
-          timeRange.end_time = extractedTime;
-          break; // Found both times
-        }
-      }
-    }
-  }
 
   return timeRange;
 }
@@ -719,6 +702,10 @@ export function parseDowntimeEvents(
         category: commentsText,
         minutes: minsValue,
       });
+      console.log(`Found downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+    } else if (commentsText.length > 0 && minsValue === null) {
+      // Log rows with comments but no minutes (might be spoilage or other data)
+      console.log(`Row ${i + 1} has comment "${commentsText}" but no minutes value`);
     }
   }
 
@@ -779,6 +766,10 @@ export function parseSpoilageEvents(
         category: commentsText,
         units: unitsValue,
       });
+      console.log(`Found spoilage event at row ${i + 1}: ${commentsText} - ${unitsValue} units`);
+    } else if (commentsText.length > 0 && unitsValue === null) {
+      // Log rows with comments but no units (might be downtime or other data)
+      console.log(`Row ${i + 1} has comment "${commentsText}" but no units value`);
     }
   }
 
@@ -1019,13 +1010,15 @@ function findProductionRowIndices(
     }
 
     // Find the production row after the work order row
+    // Production row has "Production" in column F (exact match, case-insensitive)
     for (let i = workOrderRowIndex + 1; i < excelData.length; i++) {
       const row = excelData[i];
       const colF = row["F"];
-      const colFValue = colF !== null && colF !== undefined ? String(colF).trim() : "";
+      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
 
-      if (colFValue.toLowerCase().includes("production")) {
+      if (colFValue === "production") {
         productionRowMap.set(workOrder.work_order_number, i);
+        console.log(`Found production row for WO ${workOrder.work_order_number} at row ${i + 1}`);
         break;
       }
 
@@ -1033,6 +1026,7 @@ function findProductionRowIndices(
       const colA = row["A"];
       const nextWorkOrderNumber = parseNumericValue(colA);
       if (nextWorkOrderNumber !== null) {
+        console.warn(`Did not find production row for WO ${workOrder.work_order_number} - hit next work order ${nextWorkOrderNumber} at row ${i + 1}`);
         break;
       }
     }
@@ -1149,6 +1143,19 @@ export async function parseProductionReport(
         productionRowIndex >= 0
           ? parseSpoilageEvents(excelData, productionRowIndex)
           : [];
+      
+      // Debug: Log downtime and spoilage events found
+      if (productionRowIndex >= 0) {
+        console.log(`Work order ${workOrder.work_order_number}: Found ${downtime.length} downtime events, ${spoilage.length} spoilage events`);
+        if (downtime.length > 0) {
+          console.log(`Downtime events:`, downtime.map(e => `${e.category}: ${e.minutes} min`));
+        }
+        if (spoilage.length > 0) {
+          console.log(`Spoilage events:`, spoilage.map(e => `${e.category}: ${e.units} units`));
+        }
+      } else {
+        console.warn(`Work order ${workOrder.work_order_number}: Production row index not found, skipping downtime/spoilage parsing`);
+      }
 
       // Assign work order to shift based on production time
       // Use production start time to determine which shift it belongs to
