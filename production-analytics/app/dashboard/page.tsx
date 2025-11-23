@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calendar, TrendingUp, AlertCircle, Activity, Database, Upload } from "lucide-react";
+import { Calendar, TrendingUp, AlertCircle, Activity, Database } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
 import { getDailyProduction, getTopDowntimeIssues } from "@/lib/database";
@@ -352,6 +352,8 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+          )}
+        </>
       )}
 
       {/* Charts Section */}

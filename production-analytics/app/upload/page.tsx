@@ -11,7 +11,7 @@ import {
   insertUploadHistory,
   saveProductionData,
 } from "@/lib/database";
-import { formatErrorMessage, formatSuccessMessage } from "@/lib/errorMessages";
+import { formatErrorMessage } from "@/lib/errorMessages";
 
 interface FileWithValidation {
   name: string;
@@ -51,7 +51,6 @@ export default function UploadPage() {
   const [files, setFiles] = useState<FileWithValidation[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingResults, setProcessingResults] = useState<ProcessingResult[]>([]);
-  const [currentProcessingFile, setCurrentProcessingFile] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState<{
     current: number;
     total: number;
@@ -153,10 +152,9 @@ export default function UploadPage() {
     const results: ProcessingResult[] = [];
 
     for (let i = 0; i < validFiles.length; i++) {
-      const fileWithValidation = validFiles[i];
-      const filename = fileWithValidation.name;
-      setCurrentProcessingFile(filename);
-      setProcessingProgress({
+          const fileWithValidation = validFiles[i];
+          const filename = fileWithValidation.name;
+          setProcessingProgress({
         current: i + 1,
         total: validFiles.length,
         currentFile: filename,
@@ -291,7 +289,6 @@ export default function UploadPage() {
     }
 
     setProcessingResults(results);
-    setCurrentProcessingFile(null);
     setIsProcessing(false);
   };
 

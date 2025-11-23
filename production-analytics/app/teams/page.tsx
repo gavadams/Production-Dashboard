@@ -77,15 +77,15 @@ export default function TeamsPage() {
       // Fetch training needs (use daysBack for lookback period)
       const trainingData = await getTeamTrainingNeeds(selectedDaysBack, 3);
       setTrainingNeeds(trainingData);
-        } catch (err) {
-          console.error("Error fetching team data:", err);
-          const errorMsg = formatErrorMessage(err);
-          setError(errorMsg);
-          toast.error(errorMsg);
-        } finally {
-          setLoading(false);
-        }
-      }, [selectedPress, selectedShift, selectedTeam, selectedDaysBack]);
+    } catch (err) {
+      console.error("Error fetching team data:", err);
+      const errorMsg = formatErrorMessage(err);
+      setError(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedPress, selectedShift, selectedTeam, selectedDaysBack]);
 
   useEffect(() => {
     fetchTeamData();
@@ -475,6 +475,8 @@ export default function TeamsPage() {
             </table>
           </div>
         </div>
+          )}
+        </>
       )}
 
       {/* Charts Section */}
