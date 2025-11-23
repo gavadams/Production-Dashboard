@@ -1380,7 +1380,7 @@ export async function getMaintenanceAlerts(filters: {
 
     // Create alerts with trend calculation
     const alerts: MaintenanceAlert[] = [];
-    const allKeys = new Set([...currentWeekMap.keys(), ...previousWeekMap.keys()]);
+    const allKeys = new Set([...Array.from(currentWeekMap.keys()), ...Array.from(previousWeekMap.keys())]);
 
     allKeys.forEach((key) => {
       const [press, category] = key.split("_");
