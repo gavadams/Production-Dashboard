@@ -122,7 +122,8 @@ export async function insertProductionRun(data: {
     // The error "cannot insert a non-DEFAULT value" suggests it might be generated
     // Try without it first, or only include if we know it's not generated
     // For now, we'll try with it and fall back if needed
-    if (teamIdentifier && teamIdentifier !== `${data.press}_Unknown_Unknown`) {
+    // team_identifier format: press_team (e.g., "LP05_A")
+    if (teamIdentifier && teamIdentifier !== `${data.press}_Unknown`) {
       insertPayload.team_identifier = teamIdentifier;
     }
 
@@ -468,7 +469,15 @@ export async function saveProductionData(
         });
       }
       
+      // team_identifier format: press_team (e.g., "LP05_A") - NOT including shift
       const teamIdentifier = `${report.press}_${teamValue || "Unknown"}`;
+      
+      console.log(`Constructing team_identifier for WO ${workOrder.work_order_number}:`, {
+        press: report.press,
+        team: teamValue,
+        shift: shiftValue,
+        team_identifier: teamIdentifier
+      });
 
       const productionRunData = {
         press: report.press,

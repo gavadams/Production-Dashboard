@@ -478,19 +478,15 @@ export function parseWorkOrders(
       console.log(`Found work order ${workOrderNumber} at row ${i + 1}`);
     } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
       // We're in a work order section, look for Make Ready and Production rows
-      // Column F contains "Production" text for production rows
-      // Column E contains "Make Ready" text (e.g., "44.00 Make Ready")
+      // Column F contains both "Make Ready" and "Production" text
       // Times are always in columns G (Start) and H (End)
       
       const colF = row["F"];
-      const colE = row["E"];
       const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
-      const colEValue = colE !== null && colE !== undefined ? String(colE).trim().toLowerCase() : "";
       
-      // Check column F for "Production"
+      // Check column F for "Production" or "Make Ready"
       if (colFValue === "production") {
         // Found Production row - extract times from columns G and H
-        // Use the extractTime helper function from extractTimeRange
         const timeRange = extractTimeRange(row);
         console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, {
           start: timeRange.start_time,
@@ -502,9 +498,8 @@ export function parseWorkOrders(
           currentWorkOrder.production.start_time = timeRange.start_time;
           currentWorkOrder.production.end_time = timeRange.end_time;
         }
-      } else if (colEValue.includes("make ready")) {
+      } else if (colFValue === "make ready") {
         // Found Make Ready row - extract times from columns G and H
-        // Use the extractTime helper function from extractTimeRange
         const timeRange = extractTimeRange(row);
         console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, {
           start: timeRange.start_time,
