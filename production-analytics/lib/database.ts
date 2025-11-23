@@ -1439,6 +1439,19 @@ export interface WeeklyDowntimeData {
   total_minutes: number;
 }
 
+export interface ProductionRunReport {
+  id: string;
+  date: string; // DD-MM-YYYY format
+  press: string;
+  shift: string;
+  team: string;
+  work_order: string | null;
+  good_production: number;
+  calculated_run_speed: number;
+  spoilage_percentage: number;
+  make_ready_minutes: number;
+}
+
 /**
  * Gets weekly downtime data for a specific press and category
  * Groups downtime events by week for trend analysis
@@ -1522,6 +1535,296 @@ export async function getWeeklyDowntimeData(
     return weeklyData;
   } catch (error) {
     console.error("Exception fetching weekly downtime data:", error);
+    return [];
+  }
+}
+
+export interface ProductionRunReport {
+  id: string;
+  date: string; // DD-MM-YYYY format
+  press: string;
+  shift: string;
+  team: string;
+  work_order: string | null;
+  good_production: number;
+  calculated_run_speed: number;
+  spoilage_percentage: number;
+  make_ready_minutes: number;
+}
+
+/**
+ * Gets production run reports with optional filters
+ * Queries production_runs table with search and filter capabilities
+ * 
+ * @param filters - Filter options for the query
+ * @returns Array of ProductionRunReport objects, ordered by date DESC, then press ASC
+ * 
+ * @example
+ * const reports = await getProductionRunReports({
+ *   workOrder: "62784752",
+ *   startDate: "2025-11-01",
+ *   endDate: "2025-11-30",
+ *   press: "LP05"
+ * });
+ */
+export async function getProductionRunReports(filters: {
+  workOrder?: string;
+  startDate?: string; // YYYY-MM-DD format
+  endDate?: string; // YYYY-MM-DD format
+  press?: string;
+  shift?: string;
+  team?: string;
+}): Promise<ProductionRunReport[]> {
+  try {
+    let query = supabase
+      .from("production_runs")
+      .select("id, date, press, shift, team, work_order, good_production, calculated_run_speed, spoilage_percentage, make_ready_minutes")
+      .order("date", { ascending: false })
+      .order("press", { ascending: true });
+
+    // Apply work order filter
+    if (filters.workOrder) {
+      query = query.eq("work_order", filters.workOrder);
+    }
+
+    // Apply date range filters
+    if (filters.startDate) {
+      query = query.gte("date", filters.startDate);
+    }
+
+    if (filters.endDate) {
+      query = query.lte("date", filters.endDate);
+    }
+
+    // Apply press filter
+    if (filters.press) {
+      query = query.eq("press", filters.press);
+    }
+
+    // Apply shift filter
+    if (filters.shift) {
+      query = query.eq("shift", filters.shift);
+    }
+
+    // Apply team filter
+    if (filters.team) {
+      query = query.eq("team", filters.team);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching production run reports:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Convert date from YYYY-MM-DD to DD-MM-YYYY format and map to return type
+    return data.map((record) => {
+      // Convert date from YYYY-MM-DD back to DD-MM-YYYY
+      const recordDate = new Date(record.date);
+      const day = String(recordDate.getDate()).padStart(2, "0");
+      const month = String(recordDate.getMonth() + 1).padStart(2, "0");
+      const year = recordDate.getFullYear();
+      const formattedDate = `${day}-${month}-${year}`;
+
+      return {
+        id: record.id,
+        date: formattedDate,
+        press: record.press || "",
+        shift: record.shift || "",
+        team: record.team || "",
+        work_order: record.work_order,
+        good_production: record.good_production || 0,
+        calculated_run_speed: typeof record.calculated_run_speed === "number" 
+          ? record.calculated_run_speed 
+          : parseFloat(record.calculated_run_speed as string) || 0,
+        spoilage_percentage: typeof record.spoilage_percentage === "number"
+          ? record.spoilage_percentage
+          : parseFloat(record.spoilage_percentage as string) || 0,
+        make_ready_minutes: record.make_ready_minutes || 0,
+      };
+    });
+  } catch (error) {
+    console.error("Exception fetching production run reports:", error);
+    return [];
+  }
+}
+
+export interface WorkOrderSearchResult {
+  id: string;
+  date: string; // DD-MM-YYYY format
+  press: string;
+  shift: string;
+  team: string;
+  work_order: string | null;
+  good_production: number;
+  calculated_run_speed: number;
+  spoilage_percentage: number;
+  make_ready_minutes: number;
+  production_minutes: number;
+  logged_downtime_minutes: number;
+  total_downtime_minutes: number; // Aggregated from downtime_events
+  total_spoilage_units: number; // Aggregated from spoilage_events
+  downtime_events: Array<{ category: string; minutes: number }>;
+  spoilage_events: Array<{ category: string; units: number }>;
+}
+
+/**
+ * Searches for production runs by work order number
+ * Joins with downtime_events and spoilage_events to provide complete information
+ * 
+ * @param workOrder - Work order number to search for
+ * @param startDate - Optional start date filter (YYYY-MM-DD format)
+ * @param endDate - Optional end date filter (YYYY-MM-DD format)
+ * @returns Array of WorkOrderSearchResult objects with aggregated downtime and spoilage, ordered by date and shift
+ * 
+ * @example
+ * const results = await searchWorkOrder("62784752", "2025-11-01", "2025-11-30");
+ * results.forEach(run => {
+ *   console.log(`Run on ${run.date}: ${run.total_downtime_minutes} min downtime, ${run.total_spoilage_units} units spoilage`);
+ * });
+ */
+export async function searchWorkOrder(
+  workOrder: string,
+  startDate?: string,
+  endDate?: string
+): Promise<WorkOrderSearchResult[]> {
+  try {
+    // Query production_runs table
+    let query = supabase
+      .from("production_runs")
+      .select("id, date, press, shift, team, work_order, good_production, calculated_run_speed, spoilage_percentage, make_ready_minutes, production_minutes, logged_downtime_minutes")
+      .eq("work_order", workOrder)
+      .order("date", { ascending: true })
+      .order("shift", { ascending: true });
+
+    // Apply date range filters if provided
+    if (startDate) {
+      query = query.gte("date", startDate);
+    }
+
+    if (endDate) {
+      query = query.lte("date", endDate);
+    }
+
+    const { data: productionRuns, error: runsError } = await query;
+
+    if (runsError) {
+      console.error("Error fetching production runs:", runsError);
+      return [];
+    }
+
+    if (!productionRuns || productionRuns.length === 0) {
+      return [];
+    }
+
+    // Get all production run IDs
+    const runIds = productionRuns.map((run) => run.id);
+
+    // Query downtime_events for all runs
+    const { data: downtimeEvents, error: downtimeError } = await supabase
+      .from("downtime_events")
+      .select("production_run_id, category, minutes")
+      .in("production_run_id", runIds);
+
+    if (downtimeError) {
+      console.error("Error fetching downtime events:", downtimeError);
+      // Continue without downtime data rather than failing completely
+    }
+
+    // Query spoilage_events for all runs
+    const { data: spoilageEvents, error: spoilageError } = await supabase
+      .from("spoilage_events")
+      .select("production_run_id, category, units")
+      .in("production_run_id", runIds);
+
+    if (spoilageError) {
+      console.error("Error fetching spoilage events:", spoilageError);
+      // Continue without spoilage data rather than failing completely
+    }
+
+    // Group downtime and spoilage events by production_run_id
+    const downtimeByRunId = new Map<string, Array<{ category: string; minutes: number }>>();
+    const spoilageByRunId = new Map<string, Array<{ category: string; units: number }>>();
+
+    if (downtimeEvents) {
+      downtimeEvents.forEach((event) => {
+        const runId = event.production_run_id;
+        if (!downtimeByRunId.has(runId)) {
+          downtimeByRunId.set(runId, []);
+        }
+        downtimeByRunId.get(runId)!.push({
+          category: event.category || "Unknown",
+          minutes: event.minutes || 0,
+        });
+      });
+    }
+
+    if (spoilageEvents) {
+      spoilageEvents.forEach((event) => {
+        const runId = event.production_run_id;
+        if (!spoilageByRunId.has(runId)) {
+          spoilageByRunId.set(runId, []);
+        }
+        spoilageByRunId.get(runId)!.push({
+          category: event.category || "Unknown",
+          units: event.units || 0,
+        });
+      });
+    }
+
+    // Combine production runs with aggregated downtime and spoilage
+    return productionRuns.map((run) => {
+      const runId = run.id;
+      const downtimeEventsForRun = downtimeByRunId.get(runId) || [];
+      const spoilageEventsForRun = spoilageByRunId.get(runId) || [];
+
+      // Calculate totals
+      const totalDowntimeMinutes = downtimeEventsForRun.reduce(
+        (sum, event) => sum + event.minutes,
+        0
+      );
+      const totalSpoilageUnits = spoilageEventsForRun.reduce(
+        (sum, event) => sum + event.units,
+        0
+      );
+
+      // Convert date from YYYY-MM-DD to DD-MM-YYYY format
+      const recordDate = new Date(run.date);
+      const day = String(recordDate.getDate()).padStart(2, "0");
+      const month = String(recordDate.getMonth() + 1).padStart(2, "0");
+      const year = recordDate.getFullYear();
+      const formattedDate = `${day}-${month}-${year}`;
+
+      return {
+        id: run.id,
+        date: formattedDate,
+        press: run.press || "",
+        shift: run.shift || "",
+        team: run.team || "",
+        work_order: run.work_order,
+        good_production: run.good_production || 0,
+        calculated_run_speed: typeof run.calculated_run_speed === "number"
+          ? run.calculated_run_speed
+          : parseFloat(run.calculated_run_speed as string) || 0,
+        spoilage_percentage: typeof run.spoilage_percentage === "number"
+          ? run.spoilage_percentage
+          : parseFloat(run.spoilage_percentage as string) || 0,
+        make_ready_minutes: run.make_ready_minutes || 0,
+        production_minutes: run.production_minutes || 0,
+        logged_downtime_minutes: run.logged_downtime_minutes || 0,
+        total_downtime_minutes: totalDowntimeMinutes,
+        total_spoilage_units: totalSpoilageUnits,
+        downtime_events: downtimeEventsForRun,
+        spoilage_events: spoilageEventsForRun,
+      };
+    });
+  } catch (error) {
+    console.error("Exception searching work order:", error);
     return [];
   }
 }

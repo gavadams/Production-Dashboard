@@ -184,3 +184,83 @@ export function getMaintenanceRecommendation(category: string): string {
   return "Investigate root cause and schedule maintenance";
 }
 
+/**
+ * Exports an array of data records to CSV format and triggers browser download
+ * 
+ * @param data - Array of data records (objects with key-value pairs)
+ * @param filename - Optional custom filename (without .csv extension). Defaults to "production_report_{date}"
+ * 
+ * @example
+ * const data = [
+ *   { name: "John", age: 30, city: "New York" },
+ *   { name: "Jane", age: 25, city: "London" }
+ * ];
+ * exportToCSV(data, "users");
+ * // Downloads: users_2025-11-23.csv
+ * 
+ * @example
+ * exportToCSV(data);
+ * // Downloads: production_report_2025-11-23.csv
+ */
+export function exportToCSV(
+  data: Array<Record<string, unknown>>,
+  filename?: string
+): void {
+  if (!data || data.length === 0) {
+    console.warn("No data to export");
+    return;
+  }
+
+  // Get all unique keys from all records (handles cases where records may have different keys)
+  const allKeys = new Set<string>();
+  data.forEach((record) => {
+    Object.keys(record).forEach((key) => allKeys.add(key));
+  });
+
+  // Convert Set to Array and sort for consistent column order
+  const headers = Array.from(allKeys).sort();
+
+  // Create CSV rows
+  const rows = data.map((record) =>
+    headers.map((header) => {
+      const value = record[header];
+      // Handle null, undefined, and convert to string
+      if (value === null || value === undefined) {
+        return "";
+      }
+      // Convert to string and escape quotes
+      const stringValue = String(value);
+      // Escape quotes and wrap in quotes if contains comma, quote, or newline
+      if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    })
+  );
+
+  // Combine headers and rows
+  const csvContent = [headers, ...rows]
+    .map((row) => row.join(","))
+    .join("\n");
+
+  // Generate filename with date
+  const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
+  const finalFilename = filename
+    ? `${filename}_${dateStr}.csv`
+    : `production_report_${dateStr}.csv`;
+
+  // Create blob and download
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", finalFilename);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Clean up the URL object
+  URL.revokeObjectURL(url);
+}
+
