@@ -2038,3 +2038,214 @@ export async function getTargetComparison(
   }
 }
 
+/**
+ * Production Comparison Interface
+ * Contains aggregated data for a press across two periods
+ */
+export interface ProductionComparison {
+  press: string;
+  // Period A data
+  periodA_production: number;
+  periodA_avg_speed: number;
+  periodA_avg_spoilage: number;
+  periodA_total_downtime: number;
+  periodA_run_count: number;
+  // Period B data
+  periodB_production: number;
+  periodB_avg_speed: number;
+  periodB_avg_spoilage: number;
+  periodB_total_downtime: number;
+  periodB_run_count: number;
+  // Differences
+  production_change: number;
+  production_change_pct: number;
+  speed_change: number;
+  speed_change_pct: number;
+  spoilage_change: number;
+  spoilage_change_pct: number;
+  downtime_change: number;
+  downtime_change_pct: number;
+}
+
+/**
+ * Get production comparison between two periods
+ * Aggregates production_runs data by press for both periods and calculates differences
+ * @param startDateA Start date for Period A (YYYY-MM-DD)
+ * @param endDateA End date for Period A (YYYY-MM-DD)
+ * @param startDateB Start date for Period B (YYYY-MM-DD)
+ * @param endDateB End date for Period B (YYYY-MM-DD)
+ * @returns Array of production comparisons by press
+ */
+export async function getProductionComparison(
+  startDateA: string,
+  endDateA: string,
+  startDateB: string,
+  endDateB: string
+): Promise<ProductionComparison[]> {
+  try {
+    // Fetch production runs for Period A
+    const { data: dataA, error: errorA } = await supabase
+      .from("production_runs")
+      .select("press, good_production, calculated_run_speed, spoilage_percentage, logged_downtime_minutes, date")
+      .gte("date", startDateA)
+      .lte("date", endDateA);
+
+    if (errorA) {
+      console.error("Error fetching Period A data:", errorA);
+      throw errorA;
+    }
+
+    // Fetch production runs for Period B
+    const { data: dataB, error: errorB } = await supabase
+      .from("production_runs")
+      .select("press, good_production, calculated_run_speed, spoilage_percentage, logged_downtime_minutes, date")
+      .gte("date", startDateB)
+      .lte("date", endDateB);
+
+    if (errorB) {
+      console.error("Error fetching Period B data:", errorB);
+      throw errorB;
+    }
+
+    // Aggregate Period A data by press
+    const periodAMap = new Map<
+      string,
+      {
+        production: number;
+        speed: number;
+        spoilage: number;
+        downtime: number;
+        count: number;
+      }
+    >();
+
+    if (dataA) {
+      dataA.forEach((run) => {
+        const press = run.press || "";
+        if (!press) return;
+
+        const existing = periodAMap.get(press) || {
+          production: 0,
+          speed: 0,
+          spoilage: 0,
+          downtime: 0,
+          count: 0,
+        };
+
+        periodAMap.set(press, {
+          production: existing.production + (run.good_production || 0),
+          speed: existing.speed + (run.calculated_run_speed || 0),
+          spoilage: existing.spoilage + (run.spoilage_percentage || 0),
+          downtime: existing.downtime + (run.logged_downtime_minutes || 0),
+          count: existing.count + 1,
+        });
+      });
+    }
+
+    // Aggregate Period B data by press
+    const periodBMap = new Map<
+      string,
+      {
+        production: number;
+        speed: number;
+        spoilage: number;
+        downtime: number;
+        count: number;
+      }
+    >();
+
+    if (dataB) {
+      dataB.forEach((run) => {
+        const press = run.press || "";
+        if (!press) return;
+
+        const existing = periodBMap.get(press) || {
+          production: 0,
+          speed: 0,
+          spoilage: 0,
+          downtime: 0,
+          count: 0,
+        };
+
+        periodBMap.set(press, {
+          production: existing.production + (run.good_production || 0),
+          speed: existing.speed + (run.calculated_run_speed || 0),
+          spoilage: existing.spoilage + (run.spoilage_percentage || 0),
+          downtime: existing.downtime + (run.logged_downtime_minutes || 0),
+          count: existing.count + 1,
+        });
+      });
+    }
+
+    // Get all unique presses from both periods
+    const allPresses = new Set<string>();
+    periodAMap.forEach((_, press) => allPresses.add(press));
+    periodBMap.forEach((_, press) => allPresses.add(press));
+
+    // Calculate comparisons for each press
+    const comparisons: ProductionComparison[] = Array.from(allPresses).map((press) => {
+      const dataA = periodAMap.get(press) || {
+        production: 0,
+        speed: 0,
+        spoilage: 0,
+        downtime: 0,
+        count: 0,
+      };
+      const dataB = periodBMap.get(press) || {
+        production: 0,
+        speed: 0,
+        spoilage: 0,
+        downtime: 0,
+        count: 0,
+      };
+
+      // Calculate averages
+      const avgSpeedA = dataA.count > 0 ? dataA.speed / dataA.count : 0;
+      const avgSpeedB = dataB.count > 0 ? dataB.speed / dataB.count : 0;
+      const avgSpoilageA = dataA.count > 0 ? dataA.spoilage / dataA.count : 0;
+      const avgSpoilageB = dataB.count > 0 ? dataB.spoilage / dataB.count : 0;
+
+      // Calculate changes
+      const productionChange = dataA.production - dataB.production;
+      const productionChangePct = dataB.production > 0 ? (productionChange / dataB.production) * 100 : 0;
+
+      const speedChange = avgSpeedA - avgSpeedB;
+      const speedChangePct = avgSpeedB > 0 ? (speedChange / avgSpeedB) * 100 : 0;
+
+      const spoilageChange = avgSpoilageA - avgSpoilageB;
+      const spoilageChangePct = avgSpoilageB > 0 ? (spoilageChange / avgSpoilageB) * 100 : 0;
+
+      const downtimeChange = dataA.downtime - dataB.downtime;
+      const downtimeChangePct = dataB.downtime > 0 ? (downtimeChange / dataB.downtime) * 100 : 0;
+
+      return {
+        press,
+        periodA_production: dataA.production,
+        periodA_avg_speed: avgSpeedA,
+        periodA_avg_spoilage: avgSpoilageA,
+        periodA_total_downtime: dataA.downtime,
+        periodA_run_count: dataA.count,
+        periodB_production: dataB.production,
+        periodB_avg_speed: avgSpeedB,
+        periodB_avg_spoilage: avgSpoilageB,
+        periodB_total_downtime: dataB.downtime,
+        periodB_run_count: dataB.count,
+        production_change: productionChange,
+        production_change_pct: productionChangePct,
+        speed_change: speedChange,
+        speed_change_pct: speedChangePct,
+        spoilage_change: spoilageChange,
+        spoilage_change_pct: spoilageChangePct,
+        downtime_change: downtimeChange,
+        downtime_change_pct: downtimeChangePct,
+      };
+    });
+
+    // Sort by press code
+    return comparisons.sort((a, b) => a.press.localeCompare(b.press));
+  } catch (error) {
+    console.error("Exception getting production comparison:", error);
+    throw error;
+  }
+}
+

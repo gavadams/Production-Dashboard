@@ -13,6 +13,7 @@ export default function Navigation() {
     { href: "/teams", label: "Teams" },
     { href: "/maintenance", label: "Maintenance" },
     { href: "/reports", label: "Reports" },
+    { href: "/compare", label: "Compare" },
     { href: "/settings", label: "Settings" },
   ];
 
