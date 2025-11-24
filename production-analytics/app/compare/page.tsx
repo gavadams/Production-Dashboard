@@ -687,16 +687,23 @@ export default function ComparePage() {
                 <BarChart
                   data={downtimeCategoryData}
                   layout="vertical"
-                  margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                  margin={{ top: 5, right: 30, left: 200, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" className="stroke-gray-300 dark:stroke-gray-700" />
                   <XAxis type="number" className="text-gray-600 dark:text-gray-400" tick={{ fill: "currentColor" }} />
                   <YAxis
                     dataKey="category"
                     type="category"
-                    width={90}
+                    width={180}
                     className="text-gray-600 dark:text-gray-400"
-                    tick={{ fill: "currentColor" }}
+                    tick={{ fill: "currentColor", fontSize: 12 }}
+                    tickFormatter={(value: string) => {
+                      // Truncate very long category names, but try to preserve important parts
+                      if (value.length > 40) {
+                        return value.substring(0, 37) + "...";
+                      }
+                      return value;
+                    }}
                   />
                   <Tooltip
                     contentStyle={{

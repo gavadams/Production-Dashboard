@@ -14,6 +14,7 @@ export default function Navigation() {
     { href: "/maintenance", label: "Maintenance" },
     { href: "/reports", label: "Reports" },
     { href: "/compare", label: "Compare" },
+    { href: "/issues", label: "Issues" },
     { href: "/settings", label: "Settings" },
   ];
 

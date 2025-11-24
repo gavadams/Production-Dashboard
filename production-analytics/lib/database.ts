@@ -2249,3 +2249,208 @@ export async function getProductionComparison(
   }
 }
 
+/**
+ * Recurring Issue Interface
+ * Represents a recurring issue category with aggregated statistics
+ */
+export interface RecurringIssue {
+  category: string;
+  occurrences: number;
+  totalImpact: number;
+  affectedPresses: string[];
+  mostAffectedTeam: string | null;
+  trend: "increasing" | "stable" | "decreasing";
+  firstHalfCount: number;
+  secondHalfCount: number;
+}
+
+/**
+ * Get recurring issues for downtime or spoilage
+ * Groups events by category, calculates statistics, and determines trends
+ * 
+ * @param days - Number of days to look back (default: 30)
+ * @param press - Optional press filter (if not provided, includes all presses)
+ * @param issueType - Type of issue: 'downtime' or 'spoilage'
+ * @returns Array of recurring issues sorted by occurrence count (descending)
+ * 
+ * @example
+ * const downtimeIssues = await getRecurringIssues(30, "LP05", "downtime");
+ * const spoilageIssues = await getRecurringIssues(60, undefined, "spoilage");
+ */
+export async function getRecurringIssues(
+  days: number = 30,
+  press?: string,
+  issueType: "downtime" | "spoilage" = "downtime"
+): Promise<RecurringIssue[]> {
+  try {
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+
+    const endDateStr = endDate.toISOString().split("T")[0];
+    const startDateStr = startDate.toISOString().split("T")[0];
+
+    // Calculate midpoint for trend analysis (first half vs second half)
+    const midpointDate = new Date(startDate);
+    midpointDate.setDate(startDate.getDate() + Math.floor(days / 2));
+    const midpointDateStr = midpointDate.toISOString().split("T")[0];
+
+    // Fetch ignored categories
+    let ignoredQuery = supabase
+      .from("ignored_issue_categories")
+      .select("category, press")
+      .eq("issue_type", issueType);
+
+    if (press) {
+      ignoredQuery = ignoredQuery.or(`press.is.null,press.eq.${press}`);
+    } else {
+      ignoredQuery = ignoredQuery.is("press", null);
+    }
+
+    const { data: ignoredCategories } = await ignoredQuery;
+
+    // Create set of ignored categories
+    const ignoredSet = new Set<string>();
+    if (ignoredCategories) {
+      ignoredCategories.forEach((item) => {
+        if (!item.press || item.press === press || !press) {
+          ignoredSet.add(item.category);
+        }
+      });
+    }
+
+    // Determine which table to query
+    const tableName = issueType === "downtime" ? "downtime_events" : "spoilage_events";
+    const impactField = issueType === "downtime" ? "minutes" : "units";
+
+    // Build query
+    let query = supabase
+      .from(tableName)
+      .select(`category, press, team, date, ${impactField}`)
+      .gte("date", startDateStr)
+      .lte("date", endDateStr);
+
+    if (press) {
+      query = query.eq("press", press);
+    }
+
+    const { data: events, error } = await query;
+
+    if (error) {
+      console.error(`Error fetching ${issueType} events:`, error);
+      throw error;
+    }
+
+    if (!events || events.length === 0) {
+      return [];
+    }
+
+    // Group events by category
+    const categoryMap = new Map<
+      string,
+      {
+        occurrences: number;
+        totalImpact: number;
+        presses: Set<string>;
+        teams: Map<string, number>;
+        firstHalfCount: number;
+        secondHalfCount: number;
+      }
+    >();
+
+    events.forEach((event) => {
+      const category = event.category || "Unknown";
+
+      // Skip ignored categories
+      if (ignoredSet.has(category)) {
+        return;
+      }
+
+      const existing = categoryMap.get(category) || {
+        occurrences: 0,
+        totalImpact: 0,
+        presses: new Set<string>(),
+        teams: new Map<string, number>(),
+        firstHalfCount: 0,
+        secondHalfCount: 0,
+      };
+
+      const impact = (event[impactField] as number) || 0;
+      const eventDate = event.date || "";
+
+      // Determine which half of the period this event belongs to
+      if (eventDate < midpointDateStr) {
+        existing.firstHalfCount++;
+      } else {
+        existing.secondHalfCount++;
+      }
+
+      categoryMap.set(category, {
+        occurrences: existing.occurrences + 1,
+        totalImpact: existing.totalImpact + impact,
+        presses: existing.presses.add(event.press || ""),
+        teams: (() => {
+          const team = event.team || "";
+          if (team) {
+            const count = existing.teams.get(team) || 0;
+            existing.teams.set(team, count + 1);
+          }
+          return existing.teams;
+        })(),
+        firstHalfCount: existing.firstHalfCount,
+        secondHalfCount: existing.secondHalfCount,
+      });
+    });
+
+    // Convert to array and filter (3+ occurrences) and calculate trends
+    const recurringIssues: RecurringIssue[] = Array.from(categoryMap.entries())
+      .filter(([, data]) => data.occurrences >= 3) // Filter to 3+ occurrences
+      .map(([category, data]) => {
+        // Calculate trend based on first half vs second half
+        let trend: "increasing" | "stable" | "decreasing";
+
+        if (data.firstHalfCount === 0) {
+          // If no occurrences in first half, any in second half is increasing
+          trend = data.secondHalfCount > 0 ? "increasing" : "stable";
+        } else {
+          const change = ((data.secondHalfCount - data.firstHalfCount) / data.firstHalfCount) * 100;
+          if (change > 20) {
+            trend = "increasing";
+          } else if (change < -20) {
+            trend = "decreasing";
+          } else {
+            trend = "stable";
+          }
+        }
+
+        // Find most affected team
+        let mostAffectedTeam: string | null = null;
+        let maxTeamCount = 0;
+        data.teams.forEach((count, team) => {
+          if (count > maxTeamCount) {
+            maxTeamCount = count;
+            mostAffectedTeam = team;
+          }
+        });
+
+        return {
+          category,
+          occurrences: data.occurrences,
+          totalImpact: data.totalImpact,
+          affectedPresses: Array.from(data.presses).filter((p) => p),
+          mostAffectedTeam,
+          trend,
+          firstHalfCount: data.firstHalfCount,
+          secondHalfCount: data.secondHalfCount,
+        };
+      })
+      .sort((a, b) => b.occurrences - a.occurrences); // Sort by occurrence count DESC
+
+    return recurringIssues;
+  } catch (error) {
+    console.error(`Exception getting recurring ${issueType} issues:`, error);
+    throw error;
+  }
+}
+
