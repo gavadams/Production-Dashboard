@@ -629,7 +629,6 @@ export default function ComparePage() {
                     border: "1px solid #e5e7eb",
                     borderRadius: "8px",
                   }}
-                  className="dark:bg-gray-800 dark:border-gray-700"
                 />
                 <Legend />
                 <Bar dataKey="periodA_production" fill="#3b82f6" name="Period A" />
@@ -657,7 +656,6 @@ export default function ComparePage() {
                       border: "1px solid #e5e7eb",
                       borderRadius: "8px",
                     }}
-                    className="dark:bg-gray-800 dark:border-gray-700"
                   />
                   <Legend />
                   <Line
@@ -706,7 +704,6 @@ export default function ComparePage() {
                       border: "1px solid #e5e7eb",
                       borderRadius: "8px",
                     }}
-                    className="dark:bg-gray-800 dark:border-gray-700"
                     formatter={(value: number) => `${Math.floor(value / 60)}h ${value % 60}m`}
                   />
                   <Legend />
