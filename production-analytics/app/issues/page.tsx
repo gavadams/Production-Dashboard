@@ -600,9 +600,12 @@ export default function IssuesPage() {
 
   const renderIssuesTable = (
     issues: RecurringIssue[],
+    ignoredIssues: RecurringIssue[],
     type: "downtime" | "spoilage",
     impactLabel: string
   ) => {
+    const allIssues = showIgnored ? [...issues, ...ignoredIssues] : issues;
+    
     if (allIssues.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
