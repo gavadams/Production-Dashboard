@@ -395,14 +395,22 @@ export default function IssuesPage() {
     fetchRecurringIssues();
   }, [fetchRecurringIssues]);
 
-  const handleIgnore = async (category: string, type: "downtime" | "spoilage") => {
+  const handleIgnoreClick = (category: string, type: "downtime" | "spoilage") => {
+    setIgnoreModal({ category, type });
+    setIgnoreForAllPresses(selectedPress === "all");
+    setIgnoreReason("");
+  };
+
+  const handleIgnoreConfirm = async () => {
+    if (!ignoreModal) return;
+
     try {
       const { error } = await supabase.from("ignored_issue_categories").insert({
-        category,
-        issue_type: type,
-        press: selectedPress === "all" ? null : selectedPress,
+        category: ignoreModal.category,
+        issue_type: ignoreModal.type,
+        press: ignoreForAllPresses ? null : selectedPress === "all" ? null : selectedPress,
         ignored_by: "User", // TODO: Get actual user from auth
-        reason: "Marked as normal process issue",
+        reason: ignoreReason || null,
       });
 
       if (error) {
@@ -413,7 +421,10 @@ export default function IssuesPage() {
           throw error;
         }
       } else {
-        toast.success(`${type === "downtime" ? "Downtime" : "Spoilage"} issue "${category}" marked as ignored`);
+        toast.success(
+          `${ignoreModal.type === "downtime" ? "Downtime" : "Spoilage"} issue "${ignoreModal.category}" marked as ignored`
+        );
+        setIgnoreModal(null);
         // Refresh the issues list to exclude ignored categories
         fetchRecurringIssues();
       }
@@ -421,6 +432,40 @@ export default function IssuesPage() {
       const errorMsg = formatErrorMessage(err);
       toast.error(`Failed to ignore issue: ${errorMsg}`);
       console.error("Error ignoring issue:", err);
+    }
+  };
+
+  const handleUnignore = async (category: string, type: "downtime" | "spoilage") => {
+    try {
+      const pressFilter = selectedPress === "all" ? null : selectedPress;
+      
+      let deleteQuery = supabase
+        .from("ignored_issue_categories")
+        .delete()
+        .eq("category", category)
+        .eq("issue_type", type);
+
+      if (pressFilter) {
+        deleteQuery = deleteQuery.or(`press.is.null,press.eq.${pressFilter}`);
+      } else {
+        deleteQuery = deleteQuery.is("press", null);
+      }
+
+      const { error } = await deleteQuery;
+
+      if (error) {
+        throw error;
+      } else {
+        toast.success(
+          `${type === "downtime" ? "Downtime" : "Spoilage"} issue "${category}" un-ignored`
+        );
+        // Refresh the issues list
+        fetchRecurringIssues();
+      }
+    } catch (err) {
+      const errorMsg = formatErrorMessage(err);
+      toast.error(`Failed to un-ignore issue: ${errorMsg}`);
+      console.error("Error un-ignoring issue:", err);
     }
   };
 
