@@ -678,24 +678,36 @@ export default function IssuesPage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleInvestigate(issue.category, type)}
-                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                    >
-                      <Eye className="h-3 w-3" />
-                      Investigate
-                    </button>
-                    <button
-                      onClick={() => handleIgnore(issue.category, type)}
-                      className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                    >
-                      <X className="h-3 w-3" />
-                      Ignore
-                    </button>
+                    {isIgnored ? (
+                      <button
+                        onClick={() => handleUnignore(issue.category, type)}
+                        className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                      >
+                        <XCircle className="h-3 w-3" />
+                        Un-ignore
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleInvestigate(issue.category, type)}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Investigate
+                        </button>
+                        <button
+                          onClick={() => handleIgnoreClick(issue.category, type)}
+                          className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                        >
+                          <X className="h-3 w-3" />
+                          Ignore
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
-              </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
