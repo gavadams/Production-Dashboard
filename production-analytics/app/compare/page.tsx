@@ -189,14 +189,12 @@ export default function ComparePage() {
 
     // Convert to array and sort by date
     return Array.from(trendMap.entries())
+      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
       .map(([date, data]) => ({
         date: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        dateSort: date, // Keep original date for sorting
         periodA: data.periodA,
         periodB: data.periodB,
-      }))
-      .sort((a, b) => a.dateSort.localeCompare(b.dateSort))
-      .map(({ dateSort, ...rest }) => rest); // Remove dateSort from final output
+      }));
   };
 
   const fetchDowntimeCategoryData = async (
