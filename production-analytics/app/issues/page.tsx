@@ -691,29 +691,29 @@ export default function IssuesPage() {
     }
 
     return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      <div className="w-full">
+        <table className="w-full divide-y divide-gray-200 dark:divide-gray-700 table-fixed">
           <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/4">
                 Issue Category
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-20">
                 Occurrences
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
                 Total Impact ({impactLabel})
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
                 Affected Presses
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-28">
                 Most Affected Team
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-20">
                 Trend
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">
                 Action
               </th>
             </tr>
@@ -728,32 +728,32 @@ export default function IssuesPage() {
                     issue.occurrences > 5 && !isIgnored ? "bg-yellow-50 dark:bg-yellow-900/20" : ""
                   } ${isIgnored ? "opacity-60" : ""}`}
                 >
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-4 text-sm font-medium text-gray-900 dark:text-white break-words">
                     {isIgnored ? (
                       <span className="line-through text-gray-500 dark:text-gray-400">{issue.category}</span>
                     ) : (
                       issue.category
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className="px-4 py-4 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                     {issue.occurrences}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className="px-4 py-4 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                     {type === "downtime"
                       ? `${Math.floor(issue.totalImpact / 60)}h ${issue.totalImpact % 60}m`
                       : issue.totalImpact.toLocaleString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className="px-4 py-4 text-sm text-gray-900 dark:text-white break-words">
                     {issue.affectedPresses.length > 0 ? issue.affectedPresses.join(", ") : "N/A"}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className="px-4 py-4 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                     {issue.mostAffectedTeam || "N/A"}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <td className="px-4 py-4 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                     <div className="flex items-center gap-1">{getTrendIcon(issue.trend)}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <div className="flex items-center gap-2">
+                  <td className="px-4 py-4 text-sm">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {isIgnored ? (
                         <button
                           onClick={() => handleUnignore(issue.category, type)}
