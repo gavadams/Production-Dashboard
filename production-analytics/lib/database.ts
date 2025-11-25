@@ -440,8 +440,9 @@ export async function saveProductionData(
         ? timeDifferenceInMinutes(workOrder.production.start_time, workOrder.production.end_time)
         : null;
 
-      // Calculate total downtime minutes from downtime events
-      const totalDowntimeMinutes = workOrder.downtime?.reduce(
+      // Calculate total downtime minutes from PRODUCTION downtime events only
+      // Make-ready downtime should NOT be included in logged_downtime_minutes for run speed calculation
+      const totalDowntimeMinutes = workOrder.productionDowntime?.reduce(
         (sum, event) => sum + (event.minutes || 0),
         0
       ) || 0;

@@ -36,7 +36,9 @@ export interface WorkOrder {
 }
 
 export interface WorkOrderWithDetails extends WorkOrder {
-  downtime: DowntimeEvent[];
+  downtime: DowntimeEvent[]; // All downtime (for backward compatibility)
+  productionDowntime: DowntimeEvent[]; // Only production downtime (for run speed calculation)
+  makeReadyDowntime: DowntimeEvent[]; // Only make-ready downtime
   spoilage: SpoilageEvent[];
   shift: ShiftSummary | null;
   run_speed: number;
@@ -669,34 +671,43 @@ function completeWorkOrder(workOrder: Partial<WorkOrder>): WorkOrder {
 
 /**
  * Parses downtime events from rows after a work order's start row (where Good Production is found)
- * Looks for rows where column O (Comments) has text and column P (Mins) has a number
- * This captures events during both Make Ready and Production phases
+ * Separates make-ready downtime (before Production row) from production downtime (after Production row + empty row)
+ * Only production downtime should be used for run speed calculation
  * 
  * @param excelData - Array of row objects with column letters as keys (from parseExcelFile)
  * @param workOrderStartRowIndex - Index of the work order start row (where column B has Good Production)
- * @returns Array of DowntimeEvent objects
+ * @param productionRowIndex - Index of the Production row (where column F has "Production")
+ * @returns Object with makeReadyDowntime and productionDowntime arrays
  * 
  * @example
  * const result = await parseExcelFile(file);
  * if (result.success && result.data) {
  *   const workOrders = parseWorkOrders(result.data);
  *   // For each work order, find its production row and parse downtime events
- *   const downtimeEvents = parseDowntimeEvents(result.data, productionRowIndex);
+ *   const downtimeEvents = parseDowntimeEvents(result.data, workOrderStartRowIndex, productionRowIndex);
  * }
  */
 export function parseDowntimeEvents(
   excelData: Array<Record<string, unknown>>,
-  workOrderStartRowIndex: number
-): DowntimeEvent[] {
+  workOrderStartRowIndex: number,
+  productionRowIndex: number | null = null
+): { makeReadyDowntime: DowntimeEvent[]; productionDowntime: DowntimeEvent[] } {
   if (!excelData || excelData.length === 0 || workOrderStartRowIndex < 0) {
-    return [];
+    return { makeReadyDowntime: [], productionDowntime: [] };
   }
 
-  const downtimeEvents: DowntimeEvent[] = [];
+  const makeReadyDowntime: DowntimeEvent[] = [];
+  const productionDowntime: DowntimeEvent[] = [];
+  
   const startRow = workOrderStartRowIndex + 1; // Start after the work order start row (Make Ready row)
+  
+  // If productionRowIndex is provided, use it to separate make-ready and production downtime
+  // Otherwise, fall back to old behavior (all downtime together)
+  const productionStartRow = productionRowIndex !== null 
+    ? productionRowIndex + 2  // Production downtime starts after Production row + 1 empty row
+    : startRow; // Fallback: start from beginning if no production row found
 
   // Scan forward until we find the next work order block (column B has Good Production value) or end of data
-  // This catches both regular work orders (column A has number) and blank work orders (column B has value)
   for (let i = startRow; i < excelData.length; i++) {
     const row = excelData[i];
 
@@ -727,19 +738,28 @@ export function parseDowntimeEvents(
       colO !== null && colO !== undefined ? String(colO).trim() : "";
 
     if (commentsText.length > 0 && minsValue !== null) {
-      // Valid downtime event
-      downtimeEvents.push({
+      // Valid downtime event - determine if it's make-ready or production downtime
+      const downtimeEvent: DowntimeEvent = {
         category: commentsText,
         minutes: minsValue,
-      });
-      console.log(`Found downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+      };
+      
+      if (productionRowIndex !== null && i < productionStartRow) {
+        // This is make-ready downtime (before Production row + empty row)
+        makeReadyDowntime.push(downtimeEvent);
+        console.log(`Found make-ready downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+      } else {
+        // This is production downtime (after Production row + empty row)
+        productionDowntime.push(downtimeEvent);
+        console.log(`Found production downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+      }
     } else if (commentsText.length > 0 && minsValue === null) {
       // Log rows with comments but no minutes (might be spoilage or other data)
       console.log(`Row ${i + 1} has comment "${commentsText}" but no minutes value`);
     }
   }
 
-  return downtimeEvents;
+  return { makeReadyDowntime, productionDowntime };
 }
 
 /**
@@ -1082,6 +1102,65 @@ function findWorkOrderStartRowIndices(
 }
 
 /**
+ * Finds production row indices (where column F has "Production")
+ * This is used to separate make-ready downtime from production downtime
+ * 
+ * @param excelData - Array of row objects with column letters as keys
+ * @param workOrders - Array of work orders to find production rows for
+ * @param workOrderStartRowIndices - Array of work order start row indices
+ * @returns Array of production row indices, one for each work order in the same order (null if not found)
+ */
+function findProductionRowIndices(
+  excelData: Array<Record<string, unknown>>,
+  workOrders: WorkOrder[],
+  workOrderStartRowIndices: number[]
+): (number | null)[] {
+  const productionRowIndices: (number | null)[] = [];
+
+  for (let i = 0; i < workOrders.length; i++) {
+    const workOrderStartRowIndex = workOrderStartRowIndices[i];
+    
+    if (workOrderStartRowIndex < 0) {
+      productionRowIndices.push(null);
+      continue;
+    }
+
+    // Search forward from the work order start row to find the Production row
+    // Stop when we find the next work order block (column B has Good Production value)
+    let productionRowIndex: number | null = null;
+    
+    for (let j = workOrderStartRowIndex + 1; j < excelData.length; j++) {
+      const row = excelData[j];
+      
+      // Check if we've reached the next work order block
+      const colB = row["B"];
+      const goodProduction = parseNumericValue(colB);
+      if (goodProduction !== null) {
+        // Found next work order block, stop searching
+        break;
+      }
+      
+      // Check if column F has "Production"
+      const colF = row["F"];
+      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+      if (colFValue.includes("production")) {
+        productionRowIndex = j;
+        break;
+      }
+    }
+
+    productionRowIndices.push(productionRowIndex);
+    if (productionRowIndex !== null) {
+      console.log(`Found production row for WO ${workOrders[i].work_order_number} at row ${productionRowIndex + 1}`);
+    } else {
+      console.warn(`Could not find production row for WO ${workOrders[i].work_order_number}`);
+    }
+  }
+
+  return productionRowIndices;
+}
+
+/**
  * Converts time difference to minutes
  * 
  * @param startTime - Start time in HH:MM format
@@ -1173,21 +1252,28 @@ export async function parseProductionReport(
       throw new Error("No work orders found in Excel file - cannot create production report");
     }
 
-    // Step 5: Find work order start row indices for each work order
+    // Step 5: Find work order start row indices and production row indices for each work order
     // This is where column B has Good Production value (the Make Ready row)
     // We use this to parse downtime/spoilage events from the entire work order block
     const workOrderStartRowIndices = findWorkOrderStartRowIndices(excelData, workOrders);
+    
+    // Find production row indices (where column F has "Production")
+    const productionRowIndices = findProductionRowIndices(excelData, workOrders, workOrderStartRowIndices);
 
     // Step 6: Enrich each work order with downtime, spoilage, shift, and run speed
     const workOrdersWithDetails: WorkOrderWithDetails[] = workOrders.map((workOrder, index) => {
       const workOrderStartRowIndex = workOrderStartRowIndices[index] ?? -1;
+      const productionRowIndex = productionRowIndices[index] ?? null;
 
-      // Parse downtime and spoilage events from the work order start row until the next work order block
-      // This captures events during both Make Ready and Production phases
-      const downtime =
+      // Parse downtime events, separating make-ready from production downtime
+      const downtimeResult =
         workOrderStartRowIndex >= 0
-          ? parseDowntimeEvents(excelData, workOrderStartRowIndex)
-          : [];
+          ? parseDowntimeEvents(excelData, workOrderStartRowIndex, productionRowIndex)
+          : { makeReadyDowntime: [], productionDowntime: [] };
+      
+      // Combine all downtime for backward compatibility
+      const allDowntime = [...downtimeResult.makeReadyDowntime, ...downtimeResult.productionDowntime];
+      
       const spoilage =
         workOrderStartRowIndex >= 0
           ? parseSpoilageEvents(excelData, workOrderStartRowIndex)
@@ -1195,9 +1281,12 @@ export async function parseProductionReport(
       
       // Debug: Log downtime and spoilage events found
       if (workOrderStartRowIndex >= 0) {
-        console.log(`Work order ${workOrder.work_order_number}: Found ${downtime.length} downtime events, ${spoilage.length} spoilage events`);
-        if (downtime.length > 0) {
-          console.log(`Downtime events:`, downtime.map(e => `${e.category}: ${e.minutes} min`));
+        console.log(`Work order ${workOrder.work_order_number}: Found ${downtimeResult.makeReadyDowntime.length} make-ready downtime events, ${downtimeResult.productionDowntime.length} production downtime events, ${spoilage.length} spoilage events`);
+        if (downtimeResult.makeReadyDowntime.length > 0) {
+          console.log(`Make-ready downtime events:`, downtimeResult.makeReadyDowntime.map(e => `${e.category}: ${e.minutes} min`));
+        }
+        if (downtimeResult.productionDowntime.length > 0) {
+          console.log(`Production downtime events:`, downtimeResult.productionDowntime.map(e => `${e.category}: ${e.minutes} min`));
         }
         if (spoilage.length > 0) {
           console.log(`Spoilage events:`, spoilage.map(e => `${e.category}: ${e.units} units`));
@@ -1222,13 +1311,13 @@ export async function parseProductionReport(
         console.warn(`Available shifts:`, shifts.map(s => `${s.shift} (${s.team}) ${s.start_time}-${s.end_time}`));
       }
 
-      // Calculate run speed
-      // Need production time in minutes and total downtime in minutes
+      // Calculate run speed using ONLY production downtime (not make-ready downtime)
+      // Need production time in minutes and total PRODUCTION downtime in minutes
       const productionMinutes = timeDifferenceInMinutes(
         workOrder.production.start_time,
         workOrder.production.end_time
       );
-      const totalDowntimeMinutes = downtime.reduce(
+      const totalProductionDowntimeMinutes = downtimeResult.productionDowntime.reduce(
         (sum, event) => sum + (event.minutes || 0),
         0
       );
@@ -1236,17 +1325,19 @@ export async function parseProductionReport(
       const run_speed =
         workOrder.good_production !== null &&
         productionMinutes !== null &&
-        totalDowntimeMinutes !== null
+        totalProductionDowntimeMinutes !== null
           ? calculateRunSpeed(
               workOrder.good_production,
               productionMinutes,
-              totalDowntimeMinutes
+              totalProductionDowntimeMinutes
             )
           : 0;
 
       return {
         ...workOrder,
-        downtime,
+        downtime: allDowntime, // All downtime for backward compatibility
+        productionDowntime: downtimeResult.productionDowntime, // Only production downtime
+        makeReadyDowntime: downtimeResult.makeReadyDowntime, // Only make-ready downtime
         spoilage,
         shift,
         run_speed,
