@@ -204,6 +204,21 @@ export default function DashboardPage() {
     }
   };
 
+  const getStatusExplanation = (status: PressData["status"]) => {
+    switch (status) {
+      case "running":
+        return "Production > 0 and Efficiency > 50%";
+      case "down":
+        return "Downtime > 4 hours (240 min)";
+      case "setup":
+        return "Production > 0 but Efficiency ≤ 50%";
+      case "no_work":
+        return "No production recorded";
+      default:
+        return "Status unknown";
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-GB", {
@@ -361,13 +376,18 @@ export default function DashboardPage() {
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                   {press.press}
                 </h2>
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${getStatusColor(press.status)}`}
-                    title={getStatusLabel(press.status)}
-                  />
-                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    {getStatusLabel(press.status)}
+                <div className="flex flex-col items-end gap-1">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-3 h-3 rounded-full ${getStatusColor(press.status)}`}
+                      title={`${getStatusLabel(press.status)} - ${getStatusExplanation(press.status)}`}
+                    />
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                      {getStatusLabel(press.status)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-500 dark:text-gray-500" title={getStatusExplanation(press.status)}>
+                    {getStatusExplanation(press.status)}
                   </span>
                 </div>
               </div>
@@ -474,16 +494,40 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Downtime */}
-                {press.totalDowntime > 0 && (
-                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Downtime</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {Math.floor(press.totalDowntime / 60)}h {press.totalDowntime % 60}m
-                      </span>
-                    </div>
+                <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Downtime</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {press.totalDowntime > 0 
+                        ? `${Math.floor(press.totalDowntime / 60)}h ${press.totalDowntime % 60}m`
+                        : "0h 0m"}
+                    </span>
                   </div>
-                )}
+                  {/* Downtime Percentage */}
+                  {(() => {
+                    // Calculate downtime % based on a 24-hour day (1440 minutes)
+                    // For a typical 2-shift operation, you might use 16 hours (960 minutes) instead
+                    const totalAvailableMinutes = 1440; // 24 hours
+                    const downtimePct = totalAvailableMinutes > 0 
+                      ? (press.totalDowntime / totalAvailableMinutes) * 100 
+                      : 0;
+                    
+                    return (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500 dark:text-gray-500">Downtime %</span>
+                        <span className={`text-xs font-medium ${
+                          downtimePct > 20 
+                            ? "text-red-600 dark:text-red-400" 
+                            : downtimePct > 10 
+                            ? "text-yellow-600 dark:text-yellow-400" 
+                            : "text-gray-600 dark:text-gray-400"
+                        }`}>
+                          {downtimePct.toFixed(1)}%
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           ))}
