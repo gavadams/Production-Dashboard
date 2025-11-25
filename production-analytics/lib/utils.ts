@@ -3,6 +3,49 @@
  */
 
 /**
+ * Press Status Input
+ */
+export interface PressStatusInput {
+  total_production: number;
+  efficiency_pct: number;
+  total_downtime_minutes: number;
+}
+
+/**
+ * Determines press status based on production, efficiency, and downtime
+ * 
+ * @param input - Press status calculation inputs
+ * @returns Status: "running" | "down" | "setup" | "no_work"
+ * 
+ * Logic:
+ * - "running": Production > 0 and Efficiency > 50%
+ * - "down": Downtime > 4 hours (240 min)
+ * - "setup": Production > 0 but Efficiency ≤ 50%
+ * - "no_work": No production recorded
+ */
+export function determinePressStatus(input: PressStatusInput): "running" | "down" | "setup" | "no_work" {
+  const { total_production, efficiency_pct, total_downtime_minutes } = input;
+
+  // Check if press is down (downtime > 4 hours)
+  if (total_downtime_minutes > 240) {
+    return "down";
+  }
+
+  // Check if there's no production
+  if (total_production === 0) {
+    return "no_work";
+  }
+
+  // Check if running (production > 0 and efficiency > 50%)
+  if (total_production > 0 && efficiency_pct > 50) {
+    return "running";
+  }
+
+  // Otherwise, it's setup (production > 0 but efficiency ≤ 50%)
+  return "setup";
+}
+
+/**
  * Training Priority Calculation Input
  */
 export interface TrainingPriorityInput {

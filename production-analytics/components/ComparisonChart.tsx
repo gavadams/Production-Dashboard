@@ -13,7 +13,6 @@ import {
   Cell,
 } from "recharts";
 import { getTeamTrainingNeeds } from "@/lib/database";
-import type { TeamTrainingNeed } from "@/lib/database";
 
 interface ComparisonChartProps {
   team_identifier: string;
@@ -125,7 +124,7 @@ export default function ComparisonChart({
   };
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: ChartDataPoint }> }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload as ChartDataPoint;
       return (

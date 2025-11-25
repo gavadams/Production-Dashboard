@@ -1325,9 +1325,6 @@ export async function updateTrainingEffectiveness(): Promise<TrainingEffectivene
         const afterPeriodStartStr = afterPeriodStart.toISOString().split("T")[0];
         const afterPeriodEndStr = afterPeriodEnd.toISOString().split("T")[0];
 
-        // Calculate days back for query (from today to after period start)
-        const daysBack = Math.ceil((today.getTime() - afterPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
-
         // Extract press and team from team_identifier (format: "LP05_A")
         const teamIdentifier = record.team_identifier;
         const pressMatch = teamIdentifier.match(/^([A-Z]{2}\d{2})_([A-Z])$/);

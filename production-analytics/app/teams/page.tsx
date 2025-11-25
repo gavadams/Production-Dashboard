@@ -56,7 +56,6 @@ export default function TeamsPage() {
     };
   };
   const [teams, setTeams] = useState<TeamPerformanceData[]>([]);
-  const [trainingNeeds, setTrainingNeeds] = useState<TeamTrainingNeed[]>([]);
   const [enhancedTrainingNeeds, setEnhancedTrainingNeeds] = useState<Array<TeamTrainingNeed & {
     recurringIssue?: RecurringIssue;
     trainingRecommendation?: TrainingRecommendation;
@@ -115,7 +114,6 @@ export default function TeamsPage() {
 
       // Fetch training needs (use daysBack for lookback period)
       const trainingData = await getTeamTrainingNeeds(selectedDaysBack, 3);
-      setTrainingNeeds(trainingData);
 
       // Enhance training needs with recurring issues data and training recommendations
       const enhancedData = await Promise.all(
@@ -315,9 +313,44 @@ export default function TeamsPage() {
     });
   };
 
-  const handleTrainingCompletedSuccess = () => {
+  const handleTrainingCompletedSuccess = async () => {
     // Refresh training needs to remove completed item
-    fetchTeamData();
+    await fetchTeamData();
+    // Also refresh training records
+    await fetchTrainingRecords();
+  };
+
+  const fetchTrainingRecords = async () => {
+    setTrainingHistoryLoading(true);
+    try {
+      const records = await getTrainingRecords({
+        teamIdentifier: trainingHistoryFilters.teamIdentifier || undefined,
+        issueCategory: trainingHistoryFilters.issueCategory || undefined,
+        startDate: trainingHistoryFilters.startDate || undefined,
+        endDate: trainingHistoryFilters.endDate || undefined,
+        effectivenessRating: trainingHistoryFilters.effectivenessRating || undefined,
+      });
+      setTrainingRecords(records);
+    } catch (err) {
+      console.error("Error fetching training records:", err);
+      toast.error("Failed to fetch training records");
+    } finally {
+      setTrainingHistoryLoading(false);
+    }
+  };
+
+  const handleRefreshEffectiveness = async () => {
+    setRefreshingEffectiveness(true);
+    try {
+      const summary = await updateTrainingEffectiveness();
+      toast.success(`Updated ${summary.recordsProcessed} training record(s)`);
+      await fetchTrainingRecords(); // Refresh the records
+    } catch (err) {
+      console.error("Error refreshing effectiveness:", err);
+      toast.error("Failed to refresh effectiveness data");
+    } finally {
+      setRefreshingEffectiveness(false);
+    }
   };
 
   return (
@@ -1523,8 +1556,8 @@ export default function TeamsPage() {
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                   {[...trainingRecords]
                     .sort((a, b) => {
-                      let aValue: any = a[trainingHistorySortColumn];
-                      let bValue: any = b[trainingHistorySortColumn];
+                      let aValue: string | number | null | undefined = a[trainingHistorySortColumn];
+                      let bValue: string | number | null | undefined = b[trainingHistorySortColumn];
 
                       if (aValue === null || aValue === undefined) aValue = "";
                       if (bValue === null || bValue === undefined) bValue = "";

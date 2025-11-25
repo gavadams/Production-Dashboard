@@ -5,7 +5,6 @@ import { Save, Target, AlertCircle, Settings as SettingsIcon } from "lucide-reac
 import toast from "react-hot-toast";
 import { getPressTargets, savePressTargets, getTrainingSettings, updateTrainingSettings } from "@/lib/database";
 import { formatErrorMessage } from "@/lib/errorMessages";
-import type { TrainingSetting } from "@/lib/database";
 
 const PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
 
@@ -47,6 +46,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchTargets();
     fetchTrainingSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchTrainingSettings = async () => {
@@ -683,7 +683,7 @@ export default function SettingsPage() {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Percentage increase compared to previous period required to flag a trend as "increasing". Issues with smaller increases will be considered stable.
+                  Percentage increase compared to previous period required to flag a trend as &quot;increasing&quot;. Issues with smaller increases will be considered stable.
                 </p>
               </div>
 

@@ -5,7 +5,7 @@ import { X, Calendar, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
 import { getTeamTrainingNeeds } from "@/lib/database";
-import type { TeamTrainingNeed, TrainingRecommendation } from "@/lib/database";
+import type { TrainingRecommendation } from "@/lib/database";
 
 interface MarkTrainingCompletedModalProps {
   isOpen: boolean;
@@ -47,9 +47,6 @@ export default function MarkTrainingCompletedModal({
     beforePeriodEnd.setDate(beforePeriodEnd.getDate() - 1); // Day before training
     const beforePeriodStart = new Date(beforePeriodEnd);
     beforePeriodStart.setDate(beforePeriodStart.getDate() - 30); // 30 days before
-
-    const startDateStr = beforePeriodStart.toISOString().split("T")[0];
-    const endDateStr = beforePeriodEnd.toISOString().split("T")[0];
 
     // Fetch team training needs for this period
     const daysBack = Math.ceil((Date.now() - beforePeriodStart.getTime()) / (1000 * 60 * 60 * 24));
