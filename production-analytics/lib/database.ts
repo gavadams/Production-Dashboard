@@ -1184,6 +1184,548 @@ export function getTrainingRecommendation(category: string): string {
   return `Training on ${category} prevention and troubleshooting`;
 }
 
+/**
+ * Training Recommendation Interface
+ */
+export interface TrainingRecommendation {
+  id: string;
+  issue_category: string;
+  training_title: string;
+  training_description: string | null;
+  priority: "Low" | "Medium" | "High" | "Critical";
+  estimated_duration_hours: number | null;
+  expected_improvement_pct: number | null;
+  resources: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Gets training recommendation from database for a specific issue category
+ * 
+ * @param category - Issue category name
+ * @returns Training recommendation object or null if not found
+ * 
+ * @example
+ * const recommendation = await getTrainingRecommendationFromDB("Camera Faults");
+ * if (recommendation) {
+ *   console.log(recommendation.training_title);
+ * }
+ */
+export async function getTrainingRecommendationFromDB(
+  category: string
+): Promise<TrainingRecommendation | null> {
+  try {
+    const { data, error } = await supabase
+      .from("training_recommendations")
+      .select("*")
+      .eq("issue_category", category)
+      .single();
+
+    if (error) {
+      // If not found, return null (not an error)
+      if (error.code === "PGRST116") {
+        return null;
+      }
+      console.error("Error fetching training recommendation:", error);
+      return null;
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    return {
+      id: data.id,
+      issue_category: data.issue_category,
+      training_title: data.training_title,
+      training_description: data.training_description,
+      priority: data.priority as "Low" | "Medium" | "High" | "Critical",
+      estimated_duration_hours: data.estimated_duration_hours,
+      expected_improvement_pct: data.expected_improvement_pct,
+      resources: data.resources,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
+  } catch (error) {
+    console.error("Exception fetching training recommendation:", error);
+    return null;
+  }
+}
+
+/**
+ * Training Record Update Summary
+ */
+export interface TrainingEffectivenessUpdateSummary {
+  recordsProcessed: number;
+  recordsUpdated: number;
+  recordsWithErrors: number;
+  errors: Array<{ recordId: string; error: string }>;
+}
+
+/**
+ * Updates training effectiveness metrics for records where 30 days have passed since training completion
+ * Calculates after metrics, reduction percentages, and effectiveness ratings
+ * 
+ * @returns Summary of updates made
+ * 
+ * @example
+ * const summary = await updateTrainingEffectiveness();
+ * console.log(`Updated ${summary.recordsUpdated} training records`);
+ */
+export async function updateTrainingEffectiveness(): Promise<TrainingEffectivenessUpdateSummary> {
+  const summary: TrainingEffectivenessUpdateSummary = {
+    recordsProcessed: 0,
+    recordsUpdated: 0,
+    recordsWithErrors: 0,
+    errors: [],
+  };
+
+  try {
+    // Calculate the date 30 days ago
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Find training records where:
+    // - training_completed_date + 30 days <= today (i.e., training_completed_date <= thirtyDaysAgo)
+    // - after_occurrence_count IS NULL (not yet calculated)
+    const { data: recordsToUpdate, error: fetchError } = await supabase
+      .from("training_records")
+      .select("*")
+      .lte("training_completed_date", thirtyDaysAgo.toISOString().split("T")[0])
+      .is("after_occurrence_count", null);
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!recordsToUpdate || recordsToUpdate.length === 0) {
+      return summary;
+    }
+
+    summary.recordsProcessed = recordsToUpdate.length;
+
+    // Process each record
+    for (const record of recordsToUpdate) {
+      try {
+        const trainingDate = new Date(record.training_completed_date);
+        
+        // Calculate after period (30 days after training date)
+        const afterPeriodStart = new Date(trainingDate);
+        afterPeriodStart.setDate(afterPeriodStart.getDate() + 1); // Day after training
+        const afterPeriodEnd = new Date(afterPeriodStart);
+        afterPeriodEnd.setDate(afterPeriodEnd.getDate() + 30); // 30 days after training
+
+        // Don't calculate if after period hasn't fully elapsed yet
+        if (afterPeriodEnd > today) {
+          continue;
+        }
+
+        const afterPeriodStartStr = afterPeriodStart.toISOString().split("T")[0];
+        const afterPeriodEndStr = afterPeriodEnd.toISOString().split("T")[0];
+
+        // Calculate days back for query (from today to after period start)
+        const daysBack = Math.ceil((today.getTime() - afterPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
+
+        // Extract press and team from team_identifier (format: "LP05_A")
+        const teamIdentifier = record.team_identifier;
+        const pressMatch = teamIdentifier.match(/^([A-Z]{2}\d{2})_([A-Z])$/);
+        const press = pressMatch ? pressMatch[1] : null;
+        const team = pressMatch ? pressMatch[2] : null;
+
+        // Query both downtime and spoilage events for the after period
+        // We'll determine which type based on which has data matching the team
+        let afterOccurrenceCount = 0;
+        let afterTotalImpact = 0;
+        let afterAvgPerWeek = 0;
+
+        // Query downtime events
+        let downtimeQuery = supabase
+          .from("downtime_events")
+          .select("minutes, category, team, press")
+          .eq("category", record.issue_category)
+          .gte("date", afterPeriodStartStr)
+          .lte("date", afterPeriodEndStr);
+
+        if (press) {
+          downtimeQuery = downtimeQuery.eq("press", press);
+        }
+        if (team) {
+          downtimeQuery = downtimeQuery.eq("team", team);
+        }
+
+        const { data: downtimeEvents } = await downtimeQuery;
+
+        // Query spoilage events
+        let spoilageQuery = supabase
+          .from("spoilage_events")
+          .select("units, category, team, press")
+          .eq("category", record.issue_category)
+          .gte("date", afterPeriodStartStr)
+          .lte("date", afterPeriodEndStr);
+
+        if (press) {
+          spoilageQuery = spoilageQuery.eq("press", press);
+        }
+        if (team) {
+          spoilageQuery = spoilageQuery.eq("team", team);
+        }
+
+        const { data: spoilageEvents } = await spoilageQuery;
+
+        // Determine which type of event to use based on which has data
+        // Prefer the one that matches the before metrics (if before_total_impact suggests downtime vs spoilage)
+        // For now, use whichever has more occurrences, or downtime if both are equal
+        const downtimeCount = downtimeEvents?.length || 0;
+        const spoilageCount = spoilageEvents?.length || 0;
+
+        if (downtimeCount > 0 && downtimeCount >= spoilageCount) {
+          // Use downtime events
+          afterOccurrenceCount = downtimeCount;
+          afterTotalImpact = (downtimeEvents || []).reduce(
+            (sum, event) => sum + ((event.minutes as number) || 0),
+            0
+          );
+          afterAvgPerWeek = (afterOccurrenceCount / 30) * 7;
+        } else if (spoilageCount > 0) {
+          // Use spoilage events
+          afterOccurrenceCount = spoilageCount;
+          afterTotalImpact = (spoilageEvents || []).reduce(
+            (sum, event) => sum + ((event.units as number) || 0),
+            0
+          );
+          afterAvgPerWeek = (afterOccurrenceCount / 30) * 7;
+        }
+
+        // Calculate reduction percentages
+        const beforeOccurrenceCount = record.before_occurrence_count || 0;
+        const beforeTotalImpact = record.before_total_impact || 0;
+
+        const occurrenceReductionPct =
+          beforeOccurrenceCount > 0
+            ? ((beforeOccurrenceCount - afterOccurrenceCount) / beforeOccurrenceCount) * 100
+            : afterOccurrenceCount > 0
+            ? -100 // Increase (negative reduction)
+            : 0; // No change
+
+        const impactReductionPct =
+          beforeTotalImpact > 0
+            ? ((beforeTotalImpact - afterTotalImpact) / beforeTotalImpact) * 100
+            : afterTotalImpact > 0
+            ? -100 // Increase (negative reduction)
+            : 0; // No change
+
+        // Assign effectiveness rating based on occurrence reduction
+        let effectivenessRating: "Excellent" | "Good" | "Fair" | "Poor";
+        if (occurrenceReductionPct > 50) {
+          effectivenessRating = "Excellent";
+        } else if (occurrenceReductionPct >= 30) {
+          effectivenessRating = "Good";
+        } else if (occurrenceReductionPct >= 10) {
+          effectivenessRating = "Fair";
+        } else {
+          effectivenessRating = "Poor";
+        }
+
+        // Update the record
+        const { error: updateError } = await supabase
+          .from("training_records")
+          .update({
+            after_period_start: afterPeriodStartStr,
+            after_period_end: afterPeriodEndStr,
+            after_occurrence_count: afterOccurrenceCount,
+            after_total_impact: afterTotalImpact,
+            after_avg_per_week: afterAvgPerWeek,
+            occurrence_reduction_pct: occurrenceReductionPct,
+            impact_reduction_pct: impactReductionPct,
+            effectiveness_rating: effectivenessRating,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", record.id);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        summary.recordsUpdated++;
+      } catch (error) {
+        console.error(`Error updating training record ${record.id}:`, error);
+        summary.recordsWithErrors++;
+        summary.errors.push({
+          recordId: record.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return summary;
+  } catch (error) {
+    console.error("Error in updateTrainingEffectiveness:", error);
+    throw error;
+  }
+}
+
+/**
+ * Training Record Interface
+ */
+export interface TrainingRecord {
+  id: string;
+  team_identifier: string;
+  issue_category: string;
+  training_recommendation_id: string | null;
+  training_completed_date: string;
+  notes: string | null;
+  before_period_start: string | null;
+  before_period_end: string | null;
+  before_occurrence_count: number | null;
+  before_total_impact: number | null;
+  before_avg_per_week: number | null;
+  after_period_start: string | null;
+  after_period_end: string | null;
+  after_occurrence_count: number | null;
+  after_total_impact: number | null;
+  after_avg_per_week: number | null;
+  occurrence_reduction_pct: number | null;
+  impact_reduction_pct: number | null;
+  effectiveness_rating: "Excellent" | "Good" | "Fair" | "Poor" | null;
+  recorded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Gets all training records with optional filters
+ * 
+ * @param filters - Optional filter options
+ * @returns Array of TrainingRecord objects
+ * 
+ * @example
+ * const records = await getTrainingRecords({
+ *   teamIdentifier: "LP05_A",
+ *   startDate: "2025-01-01",
+ *   endDate: "2025-12-31"
+ * });
+ */
+export async function getTrainingRecords(filters?: {
+  teamIdentifier?: string;
+  issueCategory?: string;
+  startDate?: string;
+  endDate?: string;
+  effectivenessRating?: "Excellent" | "Good" | "Fair" | "Poor";
+}): Promise<TrainingRecord[]> {
+  try {
+    let query = supabase
+      .from("training_records")
+      .select("*")
+      .order("training_completed_date", { ascending: false });
+
+    if (filters?.teamIdentifier) {
+      query = query.eq("team_identifier", filters.teamIdentifier);
+    }
+
+    if (filters?.issueCategory) {
+      query = query.eq("issue_category", filters.issueCategory);
+    }
+
+    if (filters?.startDate) {
+      query = query.gte("training_completed_date", filters.startDate);
+    }
+
+    if (filters?.endDate) {
+      query = query.lte("training_completed_date", filters.endDate);
+    }
+
+    if (filters?.effectivenessRating) {
+      query = query.eq("effectiveness_rating", filters.effectivenessRating);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching training records:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    return data.map((record) => ({
+      id: record.id,
+      team_identifier: record.team_identifier,
+      issue_category: record.issue_category,
+      training_recommendation_id: record.training_recommendation_id,
+      training_completed_date: record.training_completed_date,
+      notes: record.notes,
+      before_period_start: record.before_period_start,
+      before_period_end: record.before_period_end,
+      before_occurrence_count: record.before_occurrence_count,
+      before_total_impact: record.before_total_impact,
+      before_avg_per_week: record.before_avg_per_week,
+      after_period_start: record.after_period_start,
+      after_period_end: record.after_period_end,
+      after_occurrence_count: record.after_occurrence_count,
+      after_total_impact: record.after_total_impact,
+      after_avg_per_week: record.after_avg_per_week,
+      occurrence_reduction_pct: record.occurrence_reduction_pct,
+      impact_reduction_pct: record.impact_reduction_pct,
+      effectiveness_rating: record.effectiveness_rating,
+      recorded_by: record.recorded_by,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+    }));
+  } catch (error) {
+    console.error("Exception fetching training records:", error);
+    return [];
+  }
+}
+
+/**
+ * Training Setting Interface
+ */
+export interface TrainingSetting {
+  id: string;
+  setting_key: string;
+  setting_value: number | string;
+  description: string | null;
+  updated_at: string;
+}
+
+/**
+ * Gets all training settings
+ * 
+ * @returns Array of TrainingSetting objects
+ * 
+ * @example
+ * const settings = await getTrainingSettings();
+ * const minOccurrences = settings.find(s => s.setting_key === 'min_occurrences');
+ */
+export async function getTrainingSettings(): Promise<TrainingSetting[]> {
+  try {
+    const { data, error } = await supabase
+      .from("training_settings")
+      .select("*")
+      .order("setting_key", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching training settings:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    return data.map((record) => {
+      // Parse JSONB value - it could be a number or string
+      let parsedValue: number | string;
+      try {
+        const jsonValue = typeof record.setting_value === "string" 
+          ? JSON.parse(record.setting_value) 
+          : record.setting_value;
+        
+        // If it's a number, keep it as number, otherwise convert to string
+        parsedValue = typeof jsonValue === "number" ? jsonValue : String(jsonValue);
+      } catch {
+        parsedValue = String(record.setting_value);
+      }
+
+      return {
+        id: record.id,
+        setting_key: record.setting_key,
+        setting_value: parsedValue,
+        description: record.description,
+        updated_at: record.updated_at,
+      };
+    });
+  } catch (error) {
+    console.error("Exception fetching training settings:", error);
+    return [];
+  }
+}
+
+/**
+ * Updates a training setting
+ * 
+ * @param settingKey - The setting key to update
+ * @param value - The new value (will be stored as JSONB)
+ * @returns Success boolean
+ * 
+ * @example
+ * await updateTrainingSetting('min_occurrences', 5);
+ */
+export async function updateTrainingSetting(
+  settingKey: string,
+  value: number | string
+): Promise<boolean> {
+  try {
+    // JSONB can store numbers directly, Supabase will handle the conversion
+    const { error } = await supabase
+      .from("training_settings")
+      .update({
+        setting_value: value,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("setting_key", settingKey);
+
+    if (error) {
+      console.error("Error updating training setting:", error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Exception updating training setting:", error);
+    return false;
+  }
+}
+
+/**
+ * Updates multiple training settings at once
+ * 
+ * @param settings - Object with setting_key as key and value as value
+ * @returns Success boolean
+ * 
+ * @example
+ * await updateTrainingSettings({
+ *   min_occurrences: 5,
+ *   min_spoilage_units: 100
+ * });
+ */
+export async function updateTrainingSettings(
+  settings: Record<string, number | string>
+): Promise<boolean> {
+  try {
+    const updates = Object.entries(settings).map(([key, value]) => ({
+      setting_key: key,
+      setting_value: value,
+      updated_at: new Date().toISOString(),
+    }));
+
+    // Update each setting
+    for (const update of updates) {
+      const { error } = await supabase
+        .from("training_settings")
+        .update({
+          setting_value: update.setting_value,
+          updated_at: update.updated_at,
+        })
+        .eq("setting_key", update.setting_key);
+
+      if (error) {
+        console.error(`Error updating setting ${update.setting_key}:`, error);
+        return false;
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Exception updating training settings:", error);
+    return false;
+  }
+}
+
 export interface DowntimeTrend {
   press: string;
   category: string;
@@ -2252,7 +2794,7 @@ export async function getProductionComparison(
 
 /**
  * Recurring Issue Interface
- * Represents a recurring issue category with aggregated statistics
+ * Represents a recurring issue category with aggregated statistics and enhanced detection
  */
 export interface RecurringIssue {
   category: string;
@@ -2263,27 +2805,53 @@ export interface RecurringIssue {
   trend: "increasing" | "stable" | "decreasing";
   firstHalfCount: number;
   secondHalfCount: number;
+  // Enhanced detection fields
+  team_avg: number; // Average occurrences/impact for all teams
+  this_team_value: number; // Value for the most affected team
+  variance_from_avg: number; // Percentage variance from average
+  priority_score: number; // Calculated priority score (0-100)
 }
 
 /**
- * Get recurring issues for downtime or spoilage
- * Groups events by category, calculates statistics, and determines trends
+ * Configuration options for recurring issue detection
+ */
+export interface RecurringIssuesConfig {
+  minSpoilageUnits?: number; // Minimum spoilage units threshold (default: 50)
+  minDowntimeMinutes?: number; // Minimum downtime minutes threshold (default: 60)
+  stdDevThreshold?: number; // Standard deviation threshold (default: 1.5)
+  trendIncreaseThreshold?: number; // Trend increase threshold percentage (default: 30)
+}
+
+/**
+ * Get recurring issues for downtime or spoilage with enhanced detection
+ * Groups events by category, calculates statistics, determines trends, and applies smart filtering
  * 
  * @param days - Number of days to look back (default: 30)
  * @param press - Optional press filter (if not provided, includes all presses)
  * @param issueType - Type of issue: 'downtime' or 'spoilage'
- * @returns Array of recurring issues sorted by occurrence count (descending)
+ * @param config - Optional configuration for thresholds and detection parameters
+ * @returns Array of recurring issues sorted by priority score (descending)
  * 
  * @example
  * const downtimeIssues = await getRecurringIssues(30, "LP05", "downtime");
- * const spoilageIssues = await getRecurringIssues(60, undefined, "spoilage");
+ * const spoilageIssues = await getRecurringIssues(60, undefined, "spoilage", {
+ *   minSpoilageUnits: 100,
+ *   stdDevThreshold: 2.0
+ * });
  */
 export async function getRecurringIssues(
   days: number = 30,
   press?: string,
-  issueType: "downtime" | "spoilage" = "downtime"
+  issueType: "downtime" | "spoilage" = "downtime",
+  config: RecurringIssuesConfig = {}
 ): Promise<RecurringIssue[]> {
   try {
+    // Apply configuration defaults
+    const minSpoilageUnits = config.minSpoilageUnits ?? 50;
+    const minDowntimeMinutes = config.minDowntimeMinutes ?? 60;
+    const stdDevThreshold = config.stdDevThreshold ?? 1.5;
+    const trendIncreaseThreshold = config.trendIncreaseThreshold ?? 30;
+
     // Calculate date range
     const endDate = new Date();
     const startDate = new Date();
@@ -2291,6 +2859,14 @@ export async function getRecurringIssues(
 
     const endDateStr = endDate.toISOString().split("T")[0];
     const startDateStr = startDate.toISOString().split("T")[0];
+
+    // Calculate previous period for trend comparison
+    const previousEndDate = new Date(startDate);
+    previousEndDate.setDate(previousEndDate.getDate() - 1);
+    const previousStartDate = new Date(previousEndDate);
+    previousStartDate.setDate(previousStartDate.getDate() - days);
+    const previousEndDateStr = previousEndDate.toISOString().split("T")[0];
+    const previousStartDateStr = previousStartDate.toISOString().split("T")[0];
 
     // Calculate midpoint for trend analysis (first half vs second half)
     const midpointDate = new Date(startDate);
@@ -2354,7 +2930,7 @@ export async function getRecurringIssues(
         occurrences: number;
         totalImpact: number;
         presses: Set<string>;
-        teams: Map<string, number>;
+        teams: Map<string, { occurrences: number; impact: number }>;
         firstHalfCount: number;
         secondHalfCount: number;
       }
@@ -2372,7 +2948,7 @@ export async function getRecurringIssues(
         occurrences: 0,
         totalImpact: 0,
         presses: new Set<string>(),
-        teams: new Map<string, number>(),
+        teams: new Map<string, { occurrences: number; impact: number }>(),
         firstHalfCount: 0,
         secondHalfCount: 0,
       };
@@ -2396,8 +2972,10 @@ export async function getRecurringIssues(
         teams: (() => {
           const team = event.team || "";
           if (team) {
-            const count = existing.teams.get(team) || 0;
-            existing.teams.set(team, count + 1);
+            const teamData = existing.teams.get(team) || { occurrences: 0, impact: 0 };
+            teamData.occurrences += 1;
+            teamData.impact += impact;
+            existing.teams.set(team, teamData);
           }
           return existing.teams;
         })(),
@@ -2406,9 +2984,65 @@ export async function getRecurringIssues(
       });
     });
 
-    // Convert to array and filter (3+ occurrences) and calculate trends
+    // Query previous period events for trend comparison
+    const { data: previousEvents } = await supabase
+      .from(tableName)
+      .select(`category, team, ${impactField}`)
+      .gte("date", previousStartDateStr)
+      .lte("date", previousEndDateStr);
+
+    // Group previous period events by category and team
+    const previousCategoryMap = new Map<string, Map<string, { occurrences: number; impact: number }>>();
+    if (previousEvents) {
+      previousEvents.forEach((event) => {
+        const category = event.category || "Unknown";
+        if (ignoredSet.has(category)) {
+          return;
+        }
+
+        const impact = issueType === "downtime"
+          ? ((event as { minutes?: number }).minutes || 0)
+          : ((event as { units?: number }).units || 0);
+        const team = event.team || "";
+
+        if (!previousCategoryMap.has(category)) {
+          previousCategoryMap.set(category, new Map());
+        }
+
+        const teamMap = previousCategoryMap.get(category)!;
+        if (team) {
+          const teamData = teamMap.get(team) || { occurrences: 0, impact: 0 };
+          teamData.occurrences += 1;
+          teamData.impact += impact;
+          teamMap.set(team, teamData);
+        }
+      });
+    }
+
+    // Helper function to calculate mean and standard deviation
+    const calculateStats = (values: number[]): { mean: number; stdDev: number } => {
+      if (values.length === 0) {
+        return { mean: 0, stdDev: 0 };
+      }
+      const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+      const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+      const stdDev = Math.sqrt(variance);
+      return { mean, stdDev };
+    };
+
+    // Convert to array and apply enhanced filtering
     const recurringIssues: RecurringIssue[] = Array.from(categoryMap.entries())
-      .filter(([, data]) => data.occurrences >= 3) // Filter to 3+ occurrences
+      .filter(([, data]) => {
+        // Apply impact threshold filters
+        if (issueType === "spoilage" && data.totalImpact < minSpoilageUnits) {
+          return false;
+        }
+        if (issueType === "downtime" && data.totalImpact < minDowntimeMinutes) {
+          return false;
+        }
+        // Still require 3+ occurrences
+        return data.occurrences >= 3;
+      })
       .map(([category, data]) => {
         // Calculate trend based on first half vs second half
         let trend: "increasing" | "stable" | "decreasing";
@@ -2427,15 +3061,66 @@ export async function getRecurringIssues(
           }
         }
 
-        // Find most affected team
+        // Find most affected team and calculate team statistics
         let mostAffectedTeam: string | null = null;
-        let maxTeamCount = 0;
-        data.teams.forEach((count, team) => {
-          if (count > maxTeamCount) {
-            maxTeamCount = count;
+        let maxTeamValue = 0;
+        let thisTeamValue = 0;
+
+        // Calculate team averages for occurrences
+        const teamOccurrenceValues: number[] = [];
+        data.teams.forEach((teamData, team) => {
+          const occurrences = teamData.occurrences;
+          teamOccurrenceValues.push(occurrences);
+          if (occurrences > maxTeamValue) {
+            maxTeamValue = occurrences;
             mostAffectedTeam = team;
+            thisTeamValue = occurrences;
           }
         });
+
+        // Calculate mean and standard deviation for team occurrences
+        const { mean: teamAvgOccurrences, stdDev: teamStdDevOccurrences } = calculateStats(teamOccurrenceValues);
+
+        // Check if this team is more than 1.5 standard deviations above mean
+        const isAboveStdDev = teamStdDevOccurrences > 0 && 
+          (thisTeamValue - teamAvgOccurrences) / teamStdDevOccurrences > stdDevThreshold;
+
+        // Check if this team has increased by >30% compared to previous period
+        const previousTeamData = previousCategoryMap.get(category)?.get(mostAffectedTeam || "") || { occurrences: 0, impact: 0 };
+        const previousOccurrences = previousTeamData.occurrences;
+        const hasIncreased = previousOccurrences > 0 && 
+          ((thisTeamValue - previousOccurrences) / previousOccurrences) * 100 > trendIncreaseThreshold;
+
+        // Calculate variance from average
+        const varianceFromAvg = teamAvgOccurrences > 0
+          ? ((thisTeamValue - teamAvgOccurrences) / teamAvgOccurrences) * 100
+          : thisTeamValue > 0 ? 100 : 0;
+
+        // Calculate priority score (0-100)
+        // Factors: occurrences, impact, trend, variance from average
+        let priorityScore = 0;
+        
+        // Base score from occurrences (0-40 points)
+        const maxOccurrences = Math.max(...Array.from(categoryMap.values()).map(d => d.occurrences), 1);
+        priorityScore += (data.occurrences / maxOccurrences) * 40;
+
+        // Impact score (0-30 points)
+        const maxImpact = Math.max(...Array.from(categoryMap.values()).map(d => d.totalImpact), 1);
+        priorityScore += (data.totalImpact / maxImpact) * 30;
+
+        // Trend score (0-15 points)
+        if (trend === "increasing") {
+          priorityScore += 15;
+        } else if (trend === "stable") {
+          priorityScore += 7;
+        }
+
+        // Variance score (0-15 points)
+        const varianceScore = Math.min(15, Math.abs(varianceFromAvg) / 10);
+        priorityScore += varianceScore;
+
+        // Cap at 100
+        priorityScore = Math.min(100, Math.round(priorityScore));
 
         return {
           category,
@@ -2446,9 +3131,36 @@ export async function getRecurringIssues(
           trend,
           firstHalfCount: data.firstHalfCount,
           secondHalfCount: data.secondHalfCount,
+          team_avg: Math.round(teamAvgOccurrences * 100) / 100,
+          this_team_value: thisTeamValue,
+          variance_from_avg: Math.round(varianceFromAvg * 100) / 100,
+          priority_score: priorityScore,
+          // Store flags for filtering (will be removed before return)
+          _isAboveStdDev: isAboveStdDev,
+          _hasIncreased: hasIncreased,
         };
       })
-      .sort((a, b) => b.occurrences - a.occurrences); // Sort by occurrence count DESC
+      .filter((issue) => {
+        // Only return issues that should be flagged:
+        // 1. More than 1.5 standard deviations above mean
+        // 2. Increased by >30% compared to previous period
+        // 3. High variance (>50%) even if not above std dev
+        
+        // Use stored flags from map function
+        const isAboveStdDev = (issue as RecurringIssue & { _isAboveStdDev?: boolean })._isAboveStdDev || false;
+        const hasIncreased = (issue as RecurringIssue & { _hasIncreased?: boolean })._hasIncreased || false;
+        const highVariance = Math.abs(issue.variance_from_avg) > 50;
+        
+        return highVariance || isAboveStdDev || hasIncreased;
+      })
+      .map((issue) => {
+        // Remove internal flags before returning
+        const issueWithFlags = issue as RecurringIssue & { _isAboveStdDev?: boolean; _hasIncreased?: boolean };
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _isAboveStdDev, _hasIncreased, ...cleanIssue } = issueWithFlags;
+        return cleanIssue as RecurringIssue;
+      })
+      .sort((a, b) => b.priority_score - a.priority_score); // Sort by priority score DESC
 
     return recurringIssues;
   } catch (error) {

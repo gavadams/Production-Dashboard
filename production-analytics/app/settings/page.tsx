@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, Target, AlertCircle } from "lucide-react";
+import { Save, Target, AlertCircle, Settings as SettingsIcon } from "lucide-react";
 import toast from "react-hot-toast";
-import { getPressTargets, savePressTargets } from "@/lib/database";
+import { getPressTargets, savePressTargets, getTrainingSettings, updateTrainingSettings } from "@/lib/database";
 import { formatErrorMessage } from "@/lib/errorMessages";
+import type { TrainingSetting } from "@/lib/database";
 
 const PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
 
@@ -15,16 +16,67 @@ interface PressTarget {
   target_spoilage_pct: number;
 }
 
+interface TrainingSettingsForm {
+  min_occurrences: number;
+  min_spoilage_units: number;
+  min_downtime_minutes: number;
+  variance_threshold: number;
+  trend_increase_threshold: number;
+  lookback_days: number;
+}
+
 export default function SettingsPage() {
   const [targets, setTargets] = useState<PressTarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  
+  // Training settings state
+  const [trainingSettings, setTrainingSettings] = useState<TrainingSettingsForm>({
+    min_occurrences: 3,
+    min_spoilage_units: 50,
+    min_downtime_minutes: 60,
+    variance_threshold: 1.5,
+    trend_increase_threshold: 30,
+    lookback_days: 30,
+  });
+  const [trainingSettingsLoading, setTrainingSettingsLoading] = useState(true);
+  const [trainingSettingsSaving, setTrainingSettingsSaving] = useState(false);
 
   useEffect(() => {
     fetchTargets();
+    fetchTrainingSettings();
   }, []);
+
+  const fetchTrainingSettings = async () => {
+    setTrainingSettingsLoading(true);
+    try {
+      const settings = await getTrainingSettings();
+      
+      // Map settings to form state
+      const settingsMap: Partial<TrainingSettingsForm> = {};
+      settings.forEach((setting) => {
+        const value = typeof setting.setting_value === "number" 
+          ? setting.setting_value 
+          : parseFloat(String(setting.setting_value)) || 0;
+        
+        if (setting.setting_key in trainingSettings) {
+          settingsMap[setting.setting_key as keyof TrainingSettingsForm] = value;
+        }
+      });
+
+      setTrainingSettings((prev) => ({
+        ...prev,
+        ...settingsMap,
+      }));
+    } catch (err) {
+      console.error("Error fetching training settings:", err);
+      toast.error("Failed to load training settings");
+    } finally {
+      setTrainingSettingsLoading(false);
+    }
+  };
 
   const fetchTargets = async () => {
     setLoading(true);
@@ -170,6 +222,39 @@ export default function SettingsPage() {
 
   const getValidationError = (press: string, field: keyof PressTarget): string | undefined => {
     return validationErrors[`${press}_${field}`];
+  };
+
+  const handleTrainingSettingChange = (key: keyof TrainingSettingsForm, value: string) => {
+    const numValue = parseFloat(value) || 0;
+    setTrainingSettings((prev) => ({
+      ...prev,
+      [key]: numValue,
+    }));
+  };
+
+  const handleSaveTrainingSettings = async () => {
+    setTrainingSettingsSaving(true);
+    try {
+      const success = await updateTrainingSettings({
+        min_occurrences: trainingSettings.min_occurrences,
+        min_spoilage_units: trainingSettings.min_spoilage_units,
+        min_downtime_minutes: trainingSettings.min_downtime_minutes,
+        variance_threshold: trainingSettings.variance_threshold,
+        trend_increase_threshold: trainingSettings.trend_increase_threshold,
+        lookback_days: trainingSettings.lookback_days,
+      });
+
+      if (success) {
+        toast.success("Training settings saved successfully!");
+      } else {
+        toast.error("Failed to save training settings");
+      }
+    } catch (err) {
+      console.error("Error saving training settings:", err);
+      toast.error("Failed to save training settings");
+    } finally {
+      setTrainingSettingsSaving(false);
+    }
   };
 
   return (
@@ -468,6 +553,183 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Training Settings Section */}
+      <div className="mt-12">
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <SettingsIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+              Training Settings
+            </h1>
+          </div>
+          <p className="text-gray-600 dark:text-gray-400">
+            Configure thresholds and parameters for training detection. These settings control when training needs are flagged.
+          </p>
+        </div>
+
+        {trainingSettingsLoading ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+            <div className="space-y-4 animate-pulse">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-2">
+                  <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                  <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded"></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+            <div className="space-y-6">
+              {/* Min Occurrences */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Min Occurrences
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Current: {trainingSettings.min_occurrences}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={trainingSettings.min_occurrences || ""}
+                  onChange={(e) => handleTrainingSettingChange("min_occurrences", e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Minimum number of occurrences required to flag an issue for training. Issues with fewer occurrences will be ignored.
+                </p>
+              </div>
+
+              {/* Min Spoilage Units */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Min Spoilage Units
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Current: {trainingSettings.min_spoilage_units}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={trainingSettings.min_spoilage_units || ""}
+                  onChange={(e) => handleTrainingSettingChange("min_spoilage_units", e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Minimum total spoilage units required to flag a spoilage issue. Issues with lower total impact will be ignored.
+                </p>
+              </div>
+
+              {/* Min Downtime Minutes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Min Downtime Minutes
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Current: {trainingSettings.min_downtime_minutes}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={trainingSettings.min_downtime_minutes || ""}
+                  onChange={(e) => handleTrainingSettingChange("min_downtime_minutes", e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Minimum total downtime minutes required to flag a downtime issue. Issues with lower total impact will be ignored.
+                </p>
+              </div>
+
+              {/* Variance Threshold */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Variance Threshold (Standard Deviations)
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Current: {trainingSettings.variance_threshold}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={trainingSettings.variance_threshold || ""}
+                  onChange={(e) => handleTrainingSettingChange("variance_threshold", e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Number of standard deviations above the team average required to flag an issue. Higher values mean only more extreme cases are flagged.
+                </p>
+              </div>
+
+              {/* Trend Increase Threshold */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Trend Increase Threshold (%)
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Current: {trainingSettings.trend_increase_threshold}%
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={trainingSettings.trend_increase_threshold || ""}
+                  onChange={(e) => handleTrainingSettingChange("trend_increase_threshold", e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Percentage increase compared to previous period required to flag a trend as "increasing". Issues with smaller increases will be considered stable.
+                </p>
+              </div>
+
+              {/* Lookback Days */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Lookback Days
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Current: {trainingSettings.lookback_days} days
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={trainingSettings.lookback_days || ""}
+                  onChange={(e) => handleTrainingSettingChange("lookback_days", e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Number of days to look back when detecting training needs. Longer periods provide more stable averages but may miss recent issues.
+                </p>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end">
+              <button
+                onClick={handleSaveTrainingSettings}
+                disabled={trainingSettingsSaving}
+                className={`
+                  flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors
+                  ${
+                    trainingSettingsSaving
+                      ? "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                  }
+                `}
+              >
+                <Save className="h-4 w-4" />
+                {trainingSettingsSaving ? "Saving..." : "Save Settings"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
