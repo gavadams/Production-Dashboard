@@ -2376,7 +2376,9 @@ export async function getRecurringIssues(
         secondHalfCount: 0,
       };
 
-      const impact = (event[impactField] as number) || 0;
+      const impact = issueType === "downtime"
+        ? ((event as { minutes?: number }).minutes || 0)
+        : ((event as { units?: number }).units || 0);
       const eventDate = event.date || "";
 
       // Determine which half of the period this event belongs to

@@ -379,8 +379,33 @@ export default function IssuesPage() {
         })
         .sort((a, b) => b.occurrences - a.occurrences);
 
-      setDowntimeIssues(downtimeIssuesArray);
-      setSpoilageIssues(spoilageIssuesArray);
+      // Separate ignored and non-ignored issues
+      const nonIgnoredDowntimeIssues: RecurringIssue[] = [];
+      const ignoredDowntimeIssuesList: RecurringIssue[] = [];
+
+      downtimeIssuesArray.forEach((issue) => {
+        if (ignoredDowntimeSet.has(issue.category)) {
+          ignoredDowntimeIssuesList.push(issue);
+        } else {
+          nonIgnoredDowntimeIssues.push(issue);
+        }
+      });
+
+      const nonIgnoredSpoilageIssues: RecurringIssue[] = [];
+      const ignoredSpoilageIssuesList: RecurringIssue[] = [];
+
+      spoilageIssuesArray.forEach((issue) => {
+        if (ignoredSpoilageSet.has(issue.category)) {
+          ignoredSpoilageIssuesList.push(issue);
+        } else {
+          nonIgnoredSpoilageIssues.push(issue);
+        }
+      });
+
+      setDowntimeIssues(nonIgnoredDowntimeIssues);
+      setSpoilageIssues(nonIgnoredSpoilageIssues);
+      setIgnoredDowntimeIssues(ignoredDowntimeIssuesList);
+      setIgnoredSpoilageIssues(ignoredSpoilageIssuesList);
     } catch (err) {
       const errorMsg = formatErrorMessage(err);
       setError(errorMsg);
@@ -515,7 +540,7 @@ export default function IssuesPage() {
         .map((e) => e.production_run_id)
         .filter((id): id is string => id !== null && id !== undefined);
 
-      let workOrdersMap = new Map<string, string | null>();
+      const workOrdersMap = new Map<string, string | null>();
       if (productionRunIds.length > 0) {
         const { data: productionRuns } = await supabase
           .from("production_runs")
@@ -530,15 +555,21 @@ export default function IssuesPage() {
       }
 
       // Process occurrences
-      const occurrences = events.map((event) => ({
-        date: event.date || "",
-        press: event.press || "",
-        shift: event.shift || null,
-        team: event.team || null,
-        work_order: workOrdersMap.get(event.production_run_id || "") || event.work_order || null,
-        impact: (event[impactField] as number) || 0,
-        comments: event.comments || null,
-      }));
+      const occurrences = events.map((event) => {
+        const impact = type === "downtime" 
+          ? (event as { minutes?: number }).minutes || 0
+          : (event as { units?: number }).units || 0;
+        
+        return {
+          date: event.date || "",
+          press: event.press || "",
+          shift: event.shift || null,
+          team: event.team || null,
+          work_order: workOrdersMap.get(event.production_run_id || "") || event.work_order || null,
+          impact,
+          comments: event.comments || null,
+        };
+      });
 
       // Team breakdown
       const teamMap = new Map<string, { count: number; totalImpact: number }>();
@@ -697,60 +728,61 @@ export default function IssuesPage() {
                     issue.occurrences > 5 && !isIgnored ? "bg-yellow-50 dark:bg-yellow-900/20" : ""
                   } ${isIgnored ? "opacity-60" : ""}`}
                 >
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                  {isIgnored ? (
-                    <span className="line-through text-gray-500 dark:text-gray-400">{issue.category}</span>
-                  ) : (
-                    issue.category
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {issue.occurrences}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {type === "downtime"
-                    ? `${Math.floor(issue.totalImpact / 60)}h ${issue.totalImpact % 60}m`
-                    : issue.totalImpact.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {issue.affectedPresses.length > 0 ? issue.affectedPresses.join(", ") : "N/A"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {issue.mostAffectedTeam || "N/A"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  <div className="flex items-center gap-1">{getTrendIcon(issue.trend)}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <div className="flex items-center gap-2">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                     {isIgnored ? (
-                      <button
-                        onClick={() => handleUnignore(issue.category, type)}
-                        className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                      >
-                        <XCircle className="h-3 w-3" />
-                        Un-ignore
-                      </button>
+                      <span className="line-through text-gray-500 dark:text-gray-400">{issue.category}</span>
                     ) : (
-                      <>
-                        <button
-                          onClick={() => handleInvestigate(issue.category, type)}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                        >
-                          <Eye className="h-3 w-3" />
-                          Investigate
-                        </button>
-                        <button
-                          onClick={() => handleIgnoreClick(issue.category, type)}
-                          className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                        >
-                          <X className="h-3 w-3" />
-                          Ignore
-                        </button>
-                      </>
+                      issue.category
                     )}
-                  </div>
-                </td>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    {issue.occurrences}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    {type === "downtime"
+                      ? `${Math.floor(issue.totalImpact / 60)}h ${issue.totalImpact % 60}m`
+                      : issue.totalImpact.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    {issue.affectedPresses.length > 0 ? issue.affectedPresses.join(", ") : "N/A"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    {issue.mostAffectedTeam || "N/A"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    <div className="flex items-center gap-1">{getTrendIcon(issue.trend)}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <div className="flex items-center gap-2">
+                      {isIgnored ? (
+                        <button
+                          onClick={() => handleUnignore(issue.category, type)}
+                          className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                        >
+                          <XCircle className="h-3 w-3" />
+                          Un-ignore
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleInvestigate(issue.category, type)}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Investigate
+                          </button>
+                          <button
+                            onClick={() => handleIgnoreClick(issue.category, type)}
+                            className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                          >
+                            <X className="h-3 w-3" />
+                            Ignore
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
               );
             })}
           </tbody>
@@ -857,6 +889,280 @@ export default function IssuesPage() {
             Recurring Spoilage Issues
           </h2>
           {renderIssuesTable(spoilageIssues, ignoredSpoilageIssues, "spoilage", "units")}
+        </div>
+      )}
+
+      {/* Investigation Modal */}
+      {investigationData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full mx-4 my-8 p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+                  Investigation: {investigationData.category}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  {investigationData.type === "downtime" ? "Downtime" : "Spoilage"} Issue Analysis
+                </p>
+              </div>
+              <button
+                onClick={() => setInvestigationData(null)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Timeline Summary */}
+            <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Timeline</h3>
+              <p className="text-gray-700 dark:text-gray-300">
+                {investigationData.occurrences.length} occurrence{investigationData.occurrences.length !== 1 ? "s" : ""} over the last {timeRange} days
+              </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Date range: {new Date(new Date().setDate(new Date().getDate() - timeRange)).toLocaleDateString()} - {new Date().toLocaleDateString()}
+              </p>
+            </div>
+
+            {/* Details Table */}
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Occurrence Details</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Press
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Shift
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Team
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Work Order
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Impact
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Comments
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {investigationData.occurrences.map((occ, index) => (
+                      <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {new Date(occ.date).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{occ.press}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{occ.shift || "N/A"}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{occ.team || "N/A"}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{occ.work_order || "N/A"}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {investigationData.type === "downtime"
+                            ? `${Math.floor(occ.impact / 60)}h ${occ.impact % 60}m`
+                            : occ.impact.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white max-w-xs truncate">
+                          {occ.comments || "N/A"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Team Breakdown */}
+            {investigationData.teamBreakdown.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Affected Teams Breakdown</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                          Team
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                          Occurrences
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                          Total Impact
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {investigationData.teamBreakdown.map((team, index) => (
+                        <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{team.team}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{team.count}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                            {investigationData.type === "downtime"
+                              ? `${Math.floor(team.totalImpact / 60)}h ${team.totalImpact % 60}m`
+                              : team.totalImpact.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Pattern Analysis */}
+            {investigationData.shiftPattern.breakdown.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Pattern Analysis</h3>
+                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                  <p className="text-gray-900 dark:text-white font-medium">
+                    Most common on: <span className="font-bold">{investigationData.shiftPattern.mostCommon || "N/A"}</span>
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {investigationData.shiftPattern.breakdown.map((shift, index) => (
+                      <p key={index} className="text-sm text-gray-700 dark:text-gray-300">
+                        {shift.shift}: {shift.count} occurrence{shift.count !== 1 ? "s" : ""}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Related Issues */}
+            {investigationData.relatedIssues.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Related Issues</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Categories that often occur alongside this issue:
+                </p>
+                <div className="space-y-2">
+                  {investigationData.relatedIssues.map((related, index) => (
+                    <div
+                      key={index}
+                      className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex justify-between items-center"
+                    >
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{related.category}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {related.coOccurrenceCount} co-occurrence{related.coOccurrenceCount !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => {
+                  setInvestigationData(null);
+                  handleIgnoreClick(investigationData.category, investigationData.type);
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                Mark as Normal Process
+              </button>
+              <button
+                onClick={() => setInvestigationData(null)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Investigation Loading Overlay */}
+      {investigationLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-900 dark:text-white">Loading investigation data...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Ignore Modal */}
+      {ignoreModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+              Ignore Issue Category
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Category: <span className="font-medium">{ignoreModal.category}</span>
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Ignore for:
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={ignoreForAllPresses}
+                    onChange={() => setIgnoreForAllPresses(true)}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">All presses</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={!ignoreForAllPresses}
+                    onChange={() => setIgnoreForAllPresses(false)}
+                    className="w-4 h-4 text-blue-600"
+                    disabled={selectedPress === "all"}
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Just {selectedPress === "all" ? "selected press" : selectedPress}
+                    {selectedPress === "all" && " (select a press first)"}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label htmlFor="ignore-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Reason (optional)
+              </label>
+              <textarea
+                id="ignore-reason"
+                value={ignoreReason}
+                onChange={(e) => setIgnoreReason(e.target.value)}
+                placeholder="Enter reason for ignoring this category..."
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setIgnoreModal(null);
+                  setIgnoreReason("");
+                }}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleIgnoreConfirm}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
