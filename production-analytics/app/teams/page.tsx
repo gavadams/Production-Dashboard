@@ -328,7 +328,7 @@ export default function TeamsPage() {
         issueCategory: trainingHistoryFilters.issueCategory || undefined,
         startDate: trainingHistoryFilters.startDate || undefined,
         endDate: trainingHistoryFilters.endDate || undefined,
-        effectivenessRating: (trainingHistoryFilters.effectivenessRating && trainingHistoryFilters.effectivenessRating !== "") 
+        effectivenessRating: trainingHistoryFilters.effectivenessRating 
           ? (trainingHistoryFilters.effectivenessRating as "Excellent" | "Good" | "Fair" | "Poor")
           : undefined,
       });
