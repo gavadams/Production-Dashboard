@@ -191,23 +191,23 @@ export default function MaintenancePage() {
                   No urgent alerts at this time
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="w-full">
+                  <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/12 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Press
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/4 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Issue Category
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/6 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Current Week Minutes
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/6 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Trend %
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-2/5 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Recommendation
                         </th>
                       </tr>
@@ -219,19 +219,19 @@ export default function MaintenancePage() {
                           className="hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer"
                           onClick={() => handleCategoryClick(alert.press, alert.category)}
                         >
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm font-medium text-gray-900 dark:text-white">
                             {alert.press}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium break-words">
                             {alert.category}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
                             {alert.current_week_minutes.toFixed(0)}
                           </td>
-                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getTrendColor(alert.trend_pct)}`}>
+                          <td className={`px-4 py-4 text-sm font-medium ${getTrendColor(alert.trend_pct)}`}>
                             {formatTrend(alert.trend_pct)}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white break-words">
                             {alert.recommendation}
                           </td>
                         </tr>
@@ -259,23 +259,23 @@ export default function MaintenancePage() {
                   No warnings at this time
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="w-full">
+                  <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/12 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Press
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/4 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Issue Category
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/6 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Current Week Minutes
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/6 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Trend %
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-2/5 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Recommendation
                         </th>
                       </tr>
@@ -287,19 +287,19 @@ export default function MaintenancePage() {
                           className="hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors cursor-pointer"
                           onClick={() => handleCategoryClick(alert.press, alert.category)}
                         >
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm font-medium text-gray-900 dark:text-white">
                             {alert.press}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium break-words">
                             {alert.category}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
                             {alert.current_week_minutes.toFixed(0)}
                           </td>
-                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getTrendColor(alert.trend_pct)}`}>
+                          <td className={`px-4 py-4 text-sm font-medium ${getTrendColor(alert.trend_pct)}`}>
                             {formatTrend(alert.trend_pct)}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white break-words">
                             {alert.recommendation}
                           </td>
                         </tr>
@@ -327,23 +327,23 @@ export default function MaintenancePage() {
                   No items to monitor at this time
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="w-full">
+                  <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/12 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Press
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/4 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Issue Category
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/6 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Current Week Minutes
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-1/6 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Trend %
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="w-2/5 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Recommendation
                         </th>
                       </tr>
@@ -355,19 +355,19 @@ export default function MaintenancePage() {
                           className="hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors cursor-pointer"
                           onClick={() => handleCategoryClick(alert.press, alert.category)}
                         >
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm font-medium text-gray-900 dark:text-white">
                             {alert.press}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium break-words">
                             {alert.category}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
                             {alert.current_week_minutes.toFixed(0)}
                           </td>
-                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getTrendColor(alert.trend_pct)}`}>
+                          <td className={`px-4 py-4 text-sm font-medium ${getTrendColor(alert.trend_pct)}`}>
                             {formatTrend(alert.trend_pct)}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                          <td className="px-4 py-4 text-sm text-gray-900 dark:text-white break-words">
                             {alert.recommendation}
                           </td>
                         </tr>
@@ -379,113 +379,118 @@ export default function MaintenancePage() {
             </div>
           </div>
 
-          {/* Trend Chart Section */}
+          {/* Trend Chart Modal */}
           {selectedCategory && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                    Weekly Trend: {selectedCategory.category}
-                  </h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Press: {selectedCategory.press} • Last 12 weeks
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedCategory(null);
-                    setWeeklyData([]);
-                  }}
-                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  aria-label="Close chart"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {chartLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                </div>
-              ) : weeklyData.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-12">
-                  No data available for this category
-                </p>
-              ) : (
-                <ResponsiveContainer width="100%" height={400}>
-                  <LineChart
-                    data={weeklyData.map((week) => ({
-                      ...week,
-                      week_label: formatWeekLabel(week.week_start_date),
-                    }))}
-                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50" onClick={() => {
+              setSelectedCategory(null);
+              setWeeklyData([]);
+            }}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Weekly Trend: {selectedCategory.category}
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Press: {selectedCategory.press} • Last 12 weeks
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedCategory(null);
+                      setWeeklyData([]);
+                    }}
+                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    aria-label="Close chart"
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" />
-                    <XAxis
-                      dataKey="week_label"
-                      stroke="#6b7280"
-                      className="dark:stroke-gray-400"
-                      tick={{ fill: "#6b7280", fontSize: 12 }}
-                      angle={-45}
-                      textAnchor="end"
-                      height={80}
-                    />
-                    <YAxis
-                      stroke="#6b7280"
-                      className="dark:stroke-gray-400"
-                      tick={{ fill: "#6b7280" }}
-                      label={{
-                        value: "Minutes",
-                        angle: -90,
-                        position: "insideLeft",
-                        style: { textAnchor: "middle", fill: "#6b7280" },
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "white",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: "8px",
-                      }}
-                      formatter={(value: number) => [`${value.toFixed(0)} min`, "Downtime"]}
-                      labelFormatter={(label) => `Week: ${label}`}
-                    />
-                    <ReferenceLine
-                      y={240}
-                      stroke="#ef4444"
-                      strokeDasharray="5 5"
-                      label={{ value: "Urgent (240 min)", position: "right", fill: "#ef4444" }}
-                    />
-                    <ReferenceLine
-                      y={60}
-                      stroke="#f59e0b"
-                      strokeDasharray="5 5"
-                      label={{ value: "Warning (60 min)", position: "right", fill: "#f59e0b" }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="total_minutes"
-                      stroke="#3b82f6"
-                      fill="#3b82f6"
-                      fillOpacity={0.3}
-                      name="Downtime"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="total_minutes"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      dot={{ fill: "#3b82f6", r: 4 }}
-                      activeDot={{ r: 6 }}
-                      name="Downtime"
-                    />
-                    <Legend
-                      wrapperStyle={{ paddingTop: "20px" }}
-                      formatter={(value) => <span style={{ color: "#6b7280" }}>{value}</span>}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {chartLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : weeklyData.length === 0 ? (
+                  <p className="text-gray-500 dark:text-gray-400 text-center py-12">
+                    No data available for this category
+                  </p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart
+                      data={weeklyData.map((week) => ({
+                        ...week,
+                        week_label: formatWeekLabel(week.week_start_date),
+                      }))}
+                      margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" />
+                      <XAxis
+                        dataKey="week_label"
+                        stroke="#6b7280"
+                        className="dark:stroke-gray-400"
+                        tick={{ fill: "#6b7280", fontSize: 12 }}
+                        angle={-45}
+                        textAnchor="end"
+                        height={80}
+                      />
+                      <YAxis
+                        stroke="#6b7280"
+                        className="dark:stroke-gray-400"
+                        tick={{ fill: "#6b7280" }}
+                        label={{
+                          value: "Minutes",
+                          angle: -90,
+                          position: "insideLeft",
+                          style: { textAnchor: "middle", fill: "#6b7280" },
+                        }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "white",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: "8px",
+                        }}
+                        formatter={(value: number) => [`${value.toFixed(0)} min`, "Downtime"]}
+                        labelFormatter={(label) => `Week: ${label}`}
+                      />
+                      <ReferenceLine
+                        y={240}
+                        stroke="#ef4444"
+                        strokeDasharray="5 5"
+                        label={{ value: "Urgent (240 min)", position: "right", fill: "#ef4444" }}
+                      />
+                      <ReferenceLine
+                        y={60}
+                        stroke="#f59e0b"
+                        strokeDasharray="5 5"
+                        label={{ value: "Warning (60 min)", position: "right", fill: "#f59e0b" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="total_minutes"
+                        stroke="#3b82f6"
+                        fill="#3b82f6"
+                        fillOpacity={0.3}
+                        name="Downtime"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total_minutes"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={{ fill: "#3b82f6", r: 4 }}
+                        activeDot={{ r: 6 }}
+                        name="Downtime"
+                      />
+                      <Legend
+                        wrapperStyle={{ paddingTop: "20px" }}
+                        formatter={(value) => <span style={{ color: "#6b7280" }}>{value}</span>}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </div>
           )}
         </div>

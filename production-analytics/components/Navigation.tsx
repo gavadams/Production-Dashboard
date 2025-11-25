@@ -11,6 +11,7 @@ export default function Navigation() {
     { href: "/", label: "Dashboard" },
     { href: "/upload", label: "Upload" },
     { href: "/teams", label: "Teams" },
+    { href: "/training", label: "Training" },
     { href: "/maintenance", label: "Maintenance" },
     { href: "/reports", label: "Reports" },
     { href: "/compare", label: "Compare" },
