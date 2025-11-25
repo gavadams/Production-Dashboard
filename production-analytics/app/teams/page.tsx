@@ -80,7 +80,7 @@ export default function TeamsPage() {
     issueCategory: string;
     startDate: string;
     endDate: string;
-    effectivenessRating: string;
+    effectivenessRating: "Excellent" | "Good" | "Fair" | "Poor" | "";
   }>({
     teamIdentifier: "",
     issueCategory: "",
@@ -328,7 +328,9 @@ export default function TeamsPage() {
         issueCategory: trainingHistoryFilters.issueCategory || undefined,
         startDate: trainingHistoryFilters.startDate || undefined,
         endDate: trainingHistoryFilters.endDate || undefined,
-        effectivenessRating: trainingHistoryFilters.effectivenessRating || undefined,
+        effectivenessRating: (trainingHistoryFilters.effectivenessRating && trainingHistoryFilters.effectivenessRating !== "") 
+          ? (trainingHistoryFilters.effectivenessRating as "Excellent" | "Good" | "Fair" | "Poor")
+          : undefined,
       });
       setTrainingRecords(records);
     } catch (err) {
@@ -1481,7 +1483,10 @@ export default function TeamsPage() {
               <select
                 value={trainingHistoryFilters.effectivenessRating}
                 onChange={(e) =>
-                  setTrainingHistoryFilters({ ...trainingHistoryFilters, effectivenessRating: e.target.value })
+                  setTrainingHistoryFilters({ 
+                    ...trainingHistoryFilters, 
+                    effectivenessRating: e.target.value as "Excellent" | "Good" | "Fair" | "Poor" | ""
+                  })
                 }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
