@@ -191,19 +191,6 @@ export default function DashboardPage() {
     }
   };
 
-  const getStatusLabel = (status: PressData["status"]) => {
-    switch (status) {
-      case "running":
-        return "Running";
-      case "down":
-        return "Down";
-      case "setup":
-        return "Setup";
-      default:
-        return "Unknown";
-    }
-  };
-
   const getStatusExplanation = (status: PressData["status"]) => {
     switch (status) {
       case "running":

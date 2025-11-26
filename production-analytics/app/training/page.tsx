@@ -99,13 +99,10 @@ export default function TrainingPage() {
 
           // Estimate cost (rough calculation: assume £0.10 per unit for spoilage, £50/hour for downtime)
           // TODO: Commented out until accurate cost calculation system is implemented
-          // let estimatedCost: number | undefined;
-          // if (need.issue_type === "Spoilage") {
-          //   estimatedCost = need.total_impact * 0.10; // £0.10 per unit
-          // } else {
-          //   estimatedCost = (need.total_impact / 60) * 50; // £50 per hour
-          // }
-          let estimatedCost: number | undefined = undefined;
+          // const estimatedCost: number | undefined = need.issue_type === "Spoilage"
+          //   ? need.total_impact * 0.10 // £0.10 per unit
+          //   : (need.total_impact / 60) * 50; // £50 per hour
+          const estimatedCost: number | undefined = undefined;
 
           // Calculate priority score
           let priorityScore: number | undefined;
