@@ -147,6 +147,27 @@ export default function TrainingPage() {
     }
   }, [selectedDaysBack]);
 
+  const fetchTrainingRecords = useCallback(async () => {
+    setTrainingHistoryLoading(true);
+    try {
+      const records = await getTrainingRecords({
+        teamIdentifier: trainingHistoryFilters.teamIdentifier || undefined,
+        issueCategory: trainingHistoryFilters.issueCategory || undefined,
+        startDate: trainingHistoryFilters.startDate || undefined,
+        endDate: trainingHistoryFilters.endDate || undefined,
+        effectivenessRating: trainingHistoryFilters.effectivenessRating 
+          ? (trainingHistoryFilters.effectivenessRating as "Excellent" | "Good" | "Fair" | "Poor")
+          : undefined,
+      });
+      setTrainingRecords(records);
+    } catch (err) {
+      console.error("Error fetching training records:", err);
+      toast.error("Failed to fetch training records");
+    } finally {
+      setTrainingHistoryLoading(false);
+    }
+  }, [trainingHistoryFilters]);
+
   useEffect(() => {
     fetchTrainingData();
   }, [fetchTrainingData]);
@@ -198,27 +219,6 @@ export default function TrainingPage() {
       issueType,
     });
   };
-
-  const fetchTrainingRecords = useCallback(async () => {
-    setTrainingHistoryLoading(true);
-    try {
-      const records = await getTrainingRecords({
-        teamIdentifier: trainingHistoryFilters.teamIdentifier || undefined,
-        issueCategory: trainingHistoryFilters.issueCategory || undefined,
-        startDate: trainingHistoryFilters.startDate || undefined,
-        endDate: trainingHistoryFilters.endDate || undefined,
-        effectivenessRating: trainingHistoryFilters.effectivenessRating 
-          ? (trainingHistoryFilters.effectivenessRating as "Excellent" | "Good" | "Fair" | "Poor")
-          : undefined,
-      });
-      setTrainingRecords(records);
-    } catch (err) {
-      console.error("Error fetching training records:", err);
-      toast.error("Failed to fetch training records");
-    } finally {
-      setTrainingHistoryLoading(false);
-    }
-  }, [trainingHistoryFilters]);
 
   const handleTrainingCompletedSuccess = async () => {
     await fetchTrainingData();
