@@ -448,6 +448,7 @@ export function parseWorkOrders(
   const workOrders: WorkOrder[] = [];
   let currentWorkOrder: Partial<WorkOrder> | null = null;
   let currentWorkOrderStartRow = -1;
+  let currentWorkOrderNumber: number | null = null;
 
   for (let i = 0; i < excelData.length; i++) {
     const row = excelData[i];
@@ -455,101 +456,130 @@ export function parseWorkOrders(
     const colB = row["B"]; // Good Production
     const colC = row["C"]; // LHE
     const colD = row["D"]; // Spoilage %
-
-    // Check if column B (Good Production) has a numeric value - this indicates a new work order block
-    // Column B is always populated at the start of a new work order block, even for blank work orders
-    const goodProduction = parseNumericValue(colB);
+    const colF = row["F"]; // Phase indicator (Make Ready / Production)
+    
+    const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
     const workOrderNumber = parseNumericValue(colA);
+    const goodProduction = parseNumericValue(colB);
 
-    // If column B has a value (including 0), this is the start of a new work order block
-    if (goodProduction !== null) {
+    // Pattern 1: Row with work order number in column A and "Make Ready" in column F
+    // This is the Make Ready phase (green section)
+    // Good Production might be 0, empty, or have a value
+    if (workOrderNumber !== null && colFValue.includes("make ready")) {
       // Save previous work order if exists
       if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
         workOrders.push(completeWorkOrder(currentWorkOrder));
       }
 
-      // Start new work order block
-      // Use work order number from column A (can be 0 for blank entries)
-      // If column A is empty/null but column B has a value, use 0 as the work order number
-      const woNumber = workOrderNumber !== null ? workOrderNumber : 0;
-      
+      // Start new work order block from Make Ready phase
+      const timeRange = extractTimeRange(row);
       currentWorkOrder = {
-        work_order_number: woNumber,
-        good_production: goodProduction,
+        work_order_number: workOrderNumber,
+        good_production: goodProduction ?? 0, // May be 0 or null for Make Ready
         lhe: parseNumericValue(colC),
         spoilage_percent: parseNumericValue(colD),
-        make_ready: { start_time: null, end_time: null },
+        make_ready: {
+          start_time: timeRange.start_time,
+          end_time: timeRange.end_time,
+        },
         production: { start_time: null, end_time: null },
       };
       currentWorkOrderStartRow = i;
-      if (woNumber === 0) {
-        console.log(`Found blank work order (0) at row ${i + 1} with Good Production: ${goodProduction} - will be saved as separate entry`);
-      } else {
-        console.log(`Found work order ${woNumber} at row ${i + 1} with Good Production: ${goodProduction}`);
-      }
-      
-      // Check if this row also has "Make Ready" in column F (same row as work order number)
-      const colF = row["F"];
-      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
-      if (colFValue.includes("make ready")) {
+      currentWorkOrderNumber = workOrderNumber;
+      console.log(`Found Make Ready phase for WO ${workOrderNumber} at row ${i + 1} (Good Production: ${goodProduction ?? 0})`);
+    }
+    // Pattern 2: Row with Good Production value in column B and "Production" in column F
+    // This is the Production phase (orange section)
+    // Work order number might be in column A or might be empty (continues from previous Make Ready)
+    else if (goodProduction !== null && colFValue.includes("production")) {
+      // If we have a current work order, this Production phase belongs to it
+      if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
+        // Update the current work order with Production phase data
         const timeRange = extractTimeRange(row);
-        console.log(`Make Ready times for WO ${woNumber} (same row as WO number):`, {
-          start: timeRange.start_time,
-          end: timeRange.end_time,
-          rowG: row["G"],
-          rowH: row["H"],
-          colF: colF
-        });
-        if (currentWorkOrder.make_ready) {
-          currentWorkOrder.make_ready.start_time = timeRange.start_time;
-          currentWorkOrder.make_ready.end_time = timeRange.end_time;
-        }
-      }
-    } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
-      // We're in a work order section, look for Make Ready and Production rows
-      // Column F contains both "Make Ready" and "Production" text
-      // Times are always in columns G (Start) and H (End)
-      
-      const colF = row["F"];
-      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
-      
-      // Check column F for "Production" or "Make Ready"
-      // Use includes() to be more flexible with spacing/casing
-      if (colFValue.includes("production")) {
-        // Found Production row - extract times from columns G and H
-        const timeRange = extractTimeRange(row);
-        console.log(`Production times for WO ${currentWorkOrder.work_order_number}:`, {
-          start: timeRange.start_time,
-          end: timeRange.end_time,
-          rowG: row["G"],
-          rowH: row["H"],
-          colF: colF
-        });
         if (currentWorkOrder.production) {
           currentWorkOrder.production.start_time = timeRange.start_time;
           currentWorkOrder.production.end_time = timeRange.end_time;
         }
-      } else if (colFValue.includes("make ready")) {
-        // Found Make Ready row - extract times from columns G and H
+        // Update Good Production, LHE, Spoilage % from Production row (these are the actual values)
+        currentWorkOrder.good_production = goodProduction;
+        currentWorkOrder.lhe = parseNumericValue(colC);
+        currentWorkOrder.spoilage_percent = parseNumericValue(colD);
+        console.log(`Found Production phase for WO ${currentWorkOrder.work_order_number} at row ${i + 1} (Good Production: ${goodProduction})`);
+      } else {
+        // No current work order - this might be a standalone Production phase
+        // Check if column A has a work order number
+        const woNumber = workOrderNumber !== null ? workOrderNumber : 0;
         const timeRange = extractTimeRange(row);
-        console.log(`Make Ready times for WO ${currentWorkOrder.work_order_number}:`, {
-          start: timeRange.start_time,
-          end: timeRange.end_time,
-          rowG: row["G"],
-          rowH: row["H"],
-          colF: colF
-        });
-        if (currentWorkOrder.make_ready) {
+        currentWorkOrder = {
+          work_order_number: woNumber,
+          good_production: goodProduction,
+          lhe: parseNumericValue(colC),
+          spoilage_percent: parseNumericValue(colD),
+          make_ready: { start_time: null, end_time: null },
+          production: {
+            start_time: timeRange.start_time,
+            end_time: timeRange.end_time,
+          },
+        };
+        currentWorkOrderStartRow = i;
+        currentWorkOrderNumber = woNumber;
+        console.log(`Found standalone Production phase for WO ${woNumber} at row ${i + 1}`);
+      }
+    }
+    // Pattern 3: Row with Good Production value but no phase indicator
+    // This might be a continuation or a new work order block
+    // Only treat as new work order if we don't have a current one, or if work order number differs
+    else if (goodProduction !== null) {
+      const woNumber = workOrderNumber !== null ? workOrderNumber : 0;
+      
+      // If we have a current work order and the work order number matches, this might be additional data
+      // Otherwise, start a new work order
+      if (currentWorkOrder && currentWorkOrderNumber === woNumber) {
+        // Same work order - might be updating production data
+        // Only update if production times are not set yet
+        if (!currentWorkOrder.production?.start_time && !currentWorkOrder.production?.end_time) {
+          const timeRange = extractTimeRange(row);
+          if (currentWorkOrder.production) {
+            currentWorkOrder.production.start_time = timeRange.start_time;
+            currentWorkOrder.production.end_time = timeRange.end_time;
+          }
+        }
+        // Update Good Production, LHE, Spoilage % (use Production row values)
+        currentWorkOrder.good_production = goodProduction;
+        currentWorkOrder.lhe = parseNumericValue(colC);
+        currentWorkOrder.spoilage_percent = parseNumericValue(colD);
+      } else {
+        // Save previous work order if exists
+        if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
+          workOrders.push(completeWorkOrder(currentWorkOrder));
+        }
+
+        // Start new work order block
+        currentWorkOrder = {
+          work_order_number: woNumber,
+          good_production: goodProduction,
+          lhe: parseNumericValue(colC),
+          spoilage_percent: parseNumericValue(colD),
+          make_ready: { start_time: null, end_time: null },
+          production: { start_time: null, end_time: null },
+        };
+        currentWorkOrderStartRow = i;
+        currentWorkOrderNumber = woNumber;
+        console.log(`Found work order ${woNumber} at row ${i + 1} with Good Production: ${goodProduction}`);
+      }
+    }
+    // Pattern 4: Row with work order number but no Good Production and no phase indicator
+    // This might be a Make Ready row that we missed, or it's part of the current work order
+    else if (workOrderNumber !== null && currentWorkOrder && currentWorkOrderNumber === workOrderNumber) {
+      // Same work order - check if this row has Make Ready times we haven't captured
+      if (colFValue.includes("make ready")) {
+        const timeRange = extractTimeRange(row);
+        if (currentWorkOrder.make_ready && (!currentWorkOrder.make_ready.start_time || !currentWorkOrder.make_ready.end_time)) {
           currentWorkOrder.make_ready.start_time = timeRange.start_time;
           currentWorkOrder.make_ready.end_time = timeRange.end_time;
+          console.log(`Found Make Ready times for WO ${workOrderNumber} at row ${i + 1}`);
         }
-      } else if (colFValue.length > 0) {
-        // Log any other non-empty values in column F to help debug
-        console.log(`Row ${i + 1} has non-empty value in column F but not recognized: "${colF}" (normalized: "${colFValue}")`);
       }
-
-      // Continue processing rows until we find the next work order
-      // Empty rows are handled by checking for the next numeric value in column A
     }
   }
 
@@ -699,24 +729,69 @@ export function parseDowntimeEvents(
   const makeReadyDowntime: DowntimeEvent[] = [];
   const productionDowntime: DowntimeEvent[] = [];
   
-  const startRow = workOrderStartRowIndex + 1; // Start after the work order start row (Make Ready row)
+  // Start from the work order start row (this is the Make Ready row)
+  // Downtime events appear in rows after the Make Ready row
+  const startRow = workOrderStartRowIndex + 1;
   
-  // If productionRowIndex is provided, use it to separate make-ready and production downtime
-  // Otherwise, fall back to old behavior (all downtime together)
-  const productionStartRow = productionRowIndex !== null 
-    ? productionRowIndex + 2  // Production downtime starts after Production row + 1 empty row
-    : startRow; // Fallback: start from beginning if no production row found
+  // Determine where production downtime starts
+  // Production downtime starts after the Production row
+  // Based on the pattern: Make Ready row -> downtime events -> Production row -> (empty row) -> downtime events
+  let productionStartRow = excelData.length; // Default: no production downtime if no Production row found
+  
+  if (productionRowIndex !== null) {
+    // Production downtime starts after the Production row
+    // Look for the first empty row after Production, then downtime events start
+    for (let j = productionRowIndex + 1; j < excelData.length; j++) {
+      const row = excelData[j];
+      const colB = row["B"];
+      const goodProduction = parseNumericValue(colB);
+      
+      // If we hit the next work order block, stop
+      if (goodProduction !== null) {
+        break;
+      }
+      
+      // Check if this row has downtime data (Comments in O and Mins in P)
+      const colO = row["O"];
+      const colP = row["P"];
+      const commentsText = colO !== null && colO !== undefined ? String(colO).trim() : "";
+      const minsValue = parseNumericValue(colP);
+      
+      // If we find a row with downtime data after Production, that's where production downtime starts
+      if (commentsText.length > 0 && minsValue !== null) {
+        productionStartRow = j;
+        break;
+      }
+    }
+  }
 
   // Scan forward until we find the next work order block (column B has Good Production value) or end of data
   for (let i = startRow; i < excelData.length; i++) {
     const row = excelData[i];
 
-    // Check if we've reached the next work order block (column B has Good Production value)
+    // Check if we've reached the next work order block
+    // Look for work order number in column A OR Good Production in column B
+    const colA = row["A"];
     const colB = row["B"];
+    const workOrderNumber = parseNumericValue(colA);
     const goodProduction = parseNumericValue(colB);
-    if (goodProduction !== null) {
+    
+    // Also check for "Make Ready" or "Production" in column F to detect phase rows
+    const colF = row["F"];
+    const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+    
+    // If we find a new work order number in column A (and it's not part of current work order's Production phase)
+    // OR if we find Good Production in column B with "Production" in column F (new Production phase)
+    // This indicates we've reached the next work order block
+    if ((workOrderNumber !== null && !colFValue.includes("production")) || 
+        (goodProduction !== null && colFValue.includes("production") && i > (productionRowIndex ?? -1))) {
       // Found next work order block, stop processing
       break;
+    }
+
+    // Skip the Production row itself (it's not a downtime event)
+    if (colFValue.includes("production")) {
+      continue;
     }
 
     // Check if this row has downtime event data
@@ -744,14 +819,25 @@ export function parseDowntimeEvents(
         minutes: minsValue,
       };
       
-      if (productionRowIndex !== null && i < productionStartRow) {
-        // This is make-ready downtime (before Production row + empty row)
-        makeReadyDowntime.push(downtimeEvent);
-        console.log(`Found make-ready downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+      // Make-ready downtime is before the Production row
+      // Production downtime is after the Production row
+      if (productionRowIndex !== null) {
+        if (i < productionRowIndex) {
+          // This is make-ready downtime (before Production row)
+          makeReadyDowntime.push(downtimeEvent);
+          console.log(`Found make-ready downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+        } else if (i >= productionStartRow) {
+          // This is production downtime (after Production row and any empty rows)
+          productionDowntime.push(downtimeEvent);
+          console.log(`Found production downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+        } else {
+          // Between Production row and first downtime event - likely empty row, skip
+          continue;
+        }
       } else {
-        // This is production downtime (after Production row + empty row)
+        // No Production row found - treat all as production downtime (fallback)
         productionDowntime.push(downtimeEvent);
-        console.log(`Found production downtime event at row ${i + 1}: ${commentsText} - ${minsValue} min`);
+        console.log(`Found downtime event (no Production row) at row ${i + 1}: ${commentsText} - ${minsValue} min`);
       }
     } else if (commentsText.length > 0 && minsValue === null) {
       // Log rows with comments but no minutes (might be spoilage or other data)
@@ -1029,8 +1115,9 @@ function calculateOverlap(
 
 
 /**
- * Finds work order start row indices (where column B has Good Production value)
+ * Finds work order start row indices (the Make Ready row where column A has work order number and column F has "Make Ready")
  * This is used to parse downtime/spoilage events from the entire work order block
+ * Handles duplicate work orders by matching on work order number + good production + production start time
  * 
  * @param excelData - Array of row objects with column letters as keys
  * @param workOrders - Array of work orders to find start rows for
@@ -1042,7 +1129,8 @@ function findWorkOrderStartRowIndices(
 ): number[] {
   const startRowIndices: number[] = [];
   // Track which work order rows we've already processed to handle duplicates
-  const processedWorkOrderRows = new Set<number>();
+  // Use a more sophisticated key: work order number + good production + production start time
+  const processedWorkOrderKeys = new Set<string>();
 
   for (const workOrder of workOrders) {
     // Allow work order 0 (blank entries) - they should be processed too
@@ -1051,51 +1139,73 @@ function findWorkOrderStartRowIndices(
       continue;
     }
 
-    // Find the next unprocessed work order row with this number
-    // For work order 0, we need to check column B (Good Production) instead of column A
+    // Create a unique key for this work order using number, good production, and production start time
+    // This helps distinguish duplicate work orders with the same number and production value
+    const workOrderKey = `${workOrder.work_order_number}_${workOrder.good_production}_${workOrder.production?.start_time || 'null'}`;
+
+    // Find the next unprocessed work order row matching this work order
     let workOrderRowIndex = -1;
     for (let i = 0; i < excelData.length; i++) {
-      if (processedWorkOrderRows.has(i)) {
-        continue; // Skip already processed rows
-      }
       const row = excelData[i];
+      const colA = row["A"];
+      const colB = row["B"];
+      const colF = row["F"];
+      const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
+      const workOrderNumber = parseNumericValue(colA);
+      const goodProduction = parseNumericValue(colB);
+      
+      // Extract production start time from this row if it's a Production row
+      let rowProductionStartTime: string | null = null;
+      if (colFValue.includes("production")) {
+        const timeRange = extractTimeRange(row);
+        rowProductionStartTime = timeRange.start_time;
+      }
+      
+      // Create key for this row
+      const rowKey = `${workOrderNumber ?? 0}_${goodProduction ?? 0}_${rowProductionStartTime || 'null'}`;
+      
+      // Check if this row matches the work order we're looking for
+      let matches = false;
       
       if (workOrder.work_order_number === 0) {
-        // For blank work orders, match by column B (Good Production = 0) instead of column A
-        const colB = row["B"];
-        const goodProduction = parseNumericValue(colB);
-        if (goodProduction === 0 && workOrder.good_production === 0) {
-          // Also check that column F has "Make Ready" to ensure it's the right row
-          const colF = row["F"];
-          const colFValue = colF !== null && colF !== undefined ? String(colF).trim().toLowerCase() : "";
-          if (colFValue.includes("make ready")) {
-            workOrderRowIndex = i;
-            processedWorkOrderRows.add(i);
-            break;
-          }
+        // For blank work orders, match by column B (Good Production) and column F (Make Ready)
+        if (goodProduction === workOrder.good_production && colFValue.includes("make ready")) {
+          matches = true;
         }
       } else {
-        // For regular work orders, match by column A (work order number) and column B (Good Production)
-        const colA = row["A"];
-        const colB = row["B"];
-        const workOrderNumber = parseNumericValue(colA);
-        const goodProduction = parseNumericValue(colB);
+        // For regular work orders, match by:
+        // 1. Work order number in column A
+        // 2. Good Production in column B
+        // 3. Production start time (if available) to distinguish duplicates
         if (workOrderNumber === workOrder.work_order_number && goodProduction === workOrder.good_production) {
-          workOrderRowIndex = i;
-          processedWorkOrderRows.add(i);
-          break;
+          // If production start time is available, use it to distinguish duplicates
+          if (workOrder.production?.start_time && rowProductionStartTime) {
+            if (workOrder.production.start_time === rowProductionStartTime) {
+              matches = true;
+            }
+          } else {
+            // No production time to match - use basic matching
+            matches = true;
+          }
         }
+      }
+      
+      if (matches && !processedWorkOrderKeys.has(rowKey)) {
+        // Found a match that hasn't been processed yet
+        workOrderRowIndex = i;
+        processedWorkOrderKeys.add(rowKey);
+        console.log(`Found work order start row for WO ${workOrder.work_order_number} (Good Production: ${workOrder.good_production}, Production Start: ${workOrder.production?.start_time || 'N/A'}) at row ${i + 1}`);
+        break;
       }
     }
 
     if (workOrderRowIndex === -1) {
-      console.warn(`Could not find work order start row for WO ${workOrder.work_order_number}`);
+      console.warn(`Could not find work order start row for WO ${workOrder.work_order_number} (Good Production: ${workOrder.good_production}, Production Start: ${workOrder.production?.start_time || 'N/A'})`);
       startRowIndices.push(-1);
       continue;
     }
 
     startRowIndices.push(workOrderRowIndex);
-    console.log(`Found work order start row for WO ${workOrder.work_order_number} at row ${workOrderRowIndex + 1}`);
   }
 
   return startRowIndices;
@@ -1253,11 +1363,12 @@ export async function parseProductionReport(
     }
 
     // Step 5: Find work order start row indices and production row indices for each work order
-    // This is where column B has Good Production value (the Make Ready row)
+    // The work order start row is the Make Ready row (where column A has work order number and column F has "Make Ready")
     // We use this to parse downtime/spoilage events from the entire work order block
     const workOrderStartRowIndices = findWorkOrderStartRowIndices(excelData, workOrders);
     
     // Find production row indices (where column F has "Production")
+    // This is used to separate make-ready downtime from production downtime
     const productionRowIndices = findProductionRowIndices(excelData, workOrders, workOrderStartRowIndices);
 
     // Step 6: Enrich each work order with downtime, spoilage, shift, and run speed
