@@ -462,35 +462,9 @@ export function parseWorkOrders(
     const workOrderNumber = parseNumericValue(colA);
     const goodProduction = parseNumericValue(colB);
 
-    // Pattern 1: Row with "Make Ready Production" in column F (combined indicator)
-    // This indicates the Make Ready phase, and the Production phase follows
-    if (workOrderNumber !== null && colFValue.includes("make ready") && colFValue.includes("production")) {
-      // Save previous work order if exists
-      if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
-        workOrders.push(completeWorkOrder(currentWorkOrder));
-      }
-
-      // "Make Ready Production" row indicates Make Ready phase
-      // The Production phase will be the next row with Good Production for the same work order
-      const timeRange = extractTimeRange(row);
-      currentWorkOrder = {
-        work_order_number: workOrderNumber,
-        good_production: goodProduction ?? 0, // May be 0 or null for Make Ready
-        lhe: parseNumericValue(colC),
-        spoilage_percent: parseNumericValue(colD),
-        make_ready: {
-          start_time: timeRange.start_time,
-          end_time: timeRange.end_time,
-        },
-        production: { start_time: null, end_time: null },
-      };
-      currentWorkOrderStartRow = i;
-      currentWorkOrderNumber = workOrderNumber;
-      console.log(`Found Make Ready Production phase for WO ${workOrderNumber} at row ${i + 1} (Good Production: ${goodProduction ?? 0})`);
-    }
-    // Pattern 1b: Row with work order number in column A and "Make Ready" (but not "Production") in column F
-    // This is the Make Ready phase (green section)
-    else if (workOrderNumber !== null && colFValue.includes("make ready") && !colFValue.includes("production")) {
+    // Pattern 1: Row with work order number in column A and "Make Ready" in column F
+    // This is the Make Ready phase (green section) - ALWAYS on a separate row from Production
+    if (workOrderNumber !== null && colFValue.includes("make ready")) {
       // Save previous work order if exists
       if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
         workOrders.push(completeWorkOrder(currentWorkOrder));
@@ -513,10 +487,10 @@ export function parseWorkOrders(
       currentWorkOrderNumber = workOrderNumber;
       console.log(`Found Make Ready phase for WO ${workOrderNumber} at row ${i + 1} (Good Production: ${goodProduction ?? 0})`);
     }
-    // Pattern 2: Row with Good Production value in column B and "Production" (but not "Make Ready") in column F
-    // This is the Production phase (orange section)
-    // Work order number might be in column A or might be empty (continues from previous Make Ready)
-    else if (goodProduction !== null && colFValue.includes("production") && !colFValue.includes("make ready")) {
+    // Pattern 2: Row with "Production" in column F
+    // This is the Production phase (orange section) - ALWAYS on a separate row from Make Ready
+    // Good Production value should be in column B, work order number might be in column A or empty
+    else if (colFValue.includes("production")) {
       // If we have a current work order, this Production phase belongs to it
       if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
         // Update the current work order with Production phase data
@@ -552,8 +526,8 @@ export function parseWorkOrders(
       }
     }
     // Pattern 3: Row with Good Production value but no phase indicator in column F
-    // This is likely the Production phase following a "Make Ready Production" row
-    // OR a new work order block if we don't have a current work order
+    // This might be additional data for the current work order, or a new work order
+    // Skip this pattern - we should only process rows with explicit "Make Ready" or "Production" labels
     else if (goodProduction !== null && colFValue.length === 0) {
       const woNumber = workOrderNumber !== null ? workOrderNumber : 0;
       
@@ -1294,7 +1268,7 @@ function findProductionRowIndices(
       
       // Check if we've reached the next work order block
       // A new work order block starts when:
-      // 1. We see a work order number in column A with "Make Ready" or "Make Ready Production" in column F
+      // 1. We see a work order number in column A with "Make Ready" in column F
       // 2. OR we see Good Production in column B with a different work order number
       const colA = row["A"];
       const colB = row["B"];
@@ -1324,7 +1298,7 @@ function findProductionRowIndices(
         break;
       }
       // If column F is empty but we have Good Production, this might be the Production phase
-      // following a "Make Ready Production" row
+      // following a "Make Ready" row
       else if (colFValue.length === 0 && goodProduction !== null) {
         // Check if this belongs to the current work order
         const workOrder = workOrders[i];
