@@ -1178,15 +1178,35 @@ function findWorkOrderStartRowIndices(
       const workOrderNumber = parseNumericValue(colA);
       const goodProduction = parseNumericValue(colB);
       
-      // Extract production start time from this row if it's a Production row
+      // Extract production start time by looking ahead to the Production row
+      // This is used to distinguish duplicate work orders
       let rowProductionStartTime: string | null = null;
-      if (colFValue.includes("production")) {
-        const timeRange = extractTimeRange(row);
-        rowProductionStartTime = timeRange.start_time;
+      if (colFValue.includes("make ready")) {
+        // Look ahead to find the Production row that follows this Make Ready row
+        for (let j = i + 1; j < Math.min(i + 10, excelData.length); j++) {
+          const nextRow = excelData[j];
+          const nextColF = nextRow["F"];
+          const nextColFValue = nextColF !== null && nextColF !== undefined ? String(nextColF).trim().toLowerCase() : "";
+          const nextColA = nextRow["A"];
+          const nextWorkOrderNumber = parseNumericValue(nextColA);
+          
+          // If we hit the next Make Ready row, stop looking
+          if (nextWorkOrderNumber !== null && nextColFValue.includes("make ready")) {
+            break;
+          }
+          
+          // Check if this is the Production row
+          if (nextColFValue.includes("production") && !nextColFValue.includes("make ready")) {
+            const nextTimeRange = extractTimeRange(nextRow);
+            rowProductionStartTime = nextTimeRange.start_time;
+            break;
+          }
+        }
       }
       
-      // Create key for this row
-      const rowKey = `${workOrderNumber ?? 0}_${goodProduction ?? 0}_${rowProductionStartTime || 'null'}`;
+      // Create key for this row using work order number and production start time
+      // This helps distinguish duplicate work orders
+      const rowKey = `${workOrderNumber ?? 0}_${rowProductionStartTime || 'null'}`;
       
       // Check if this row matches the work order we're looking for
       let matches = false;
@@ -1199,16 +1219,40 @@ function findWorkOrderStartRowIndices(
       } else {
         // For regular work orders, match by:
         // 1. Work order number in column A
-        // 2. Good Production in column B
-        // 3. Production start time (if available) to distinguish duplicates
-        if (workOrderNumber === workOrder.work_order_number && goodProduction === workOrder.good_production) {
-          // If production start time is available, use it to distinguish duplicates
-          if (workOrder.production?.start_time && rowProductionStartTime) {
-            if (workOrder.production.start_time === rowProductionStartTime) {
+        // 2. "Make Ready" in column F (this is the start row)
+        // NOTE: We don't match by good_production because that comes from the Production row,
+        // not the Make Ready row (which is the start row we're looking for)
+        if (workOrderNumber === workOrder.work_order_number && colFValue.includes("make ready")) {
+          // To distinguish duplicates, look ahead to find the Production row and verify its start time
+          if (workOrder.production?.start_time) {
+            // Look ahead to find the Production row that follows this Make Ready row
+            let foundMatchingProduction = false;
+            for (let j = i + 1; j < Math.min(i + 10, excelData.length); j++) {
+              const nextRow = excelData[j];
+              const nextColF = nextRow["F"];
+              const nextColFValue = nextColF !== null && nextColF !== undefined ? String(nextColF).trim().toLowerCase() : "";
+              const nextColA = nextRow["A"];
+              const nextWorkOrderNumber = parseNumericValue(nextColA);
+              
+              // If we hit the next Make Ready row, stop looking
+              if (nextWorkOrderNumber !== null && nextColFValue.includes("make ready")) {
+                break;
+              }
+              
+              // Check if this is the Production row for the same work order
+              if (nextColFValue.includes("production") && !nextColFValue.includes("make ready")) {
+                const nextTimeRange = extractTimeRange(nextRow);
+                if (nextTimeRange.start_time === workOrder.production.start_time) {
+                  foundMatchingProduction = true;
+                  break;
+                }
+              }
+            }
+            if (foundMatchingProduction) {
               matches = true;
             }
           } else {
-            // No production time to match - use basic matching
+            // No production time to match - use basic matching (work order number + Make Ready)
             matches = true;
           }
         }
