@@ -12,7 +12,6 @@ import EmptyState from "@/components/EmptyState";
 import ComparisonChart from "@/components/ComparisonChart";
 import MarkTrainingCompletedModal from "@/components/MarkTrainingCompletedModal";
 
-const PRESS_CODES = ["LA01", "LA02", "LP03", "LP04", "LP05", "CL01"];
 const DATE_RANGES = [
   { label: "Last 7 days", value: 7 },
   { label: "Last 30 days", value: 30 },
