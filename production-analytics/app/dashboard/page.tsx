@@ -380,15 +380,9 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <div
                       className={`w-3 h-3 rounded-full ${getStatusColor(press.status)}`}
-                      title={`${getStatusLabel(press.status)} - ${getStatusExplanation(press.status)}`}
+                      title={getStatusExplanation(press.status)}
                     />
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                      {getStatusLabel(press.status)}
-                    </span>
                   </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-500" title={getStatusExplanation(press.status)}>
-                    {getStatusExplanation(press.status)}
-                  </span>
                 </div>
               </div>
 

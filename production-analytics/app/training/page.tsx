@@ -98,12 +98,14 @@ export default function TrainingPage() {
             : undefined;
 
           // Estimate cost (rough calculation: assume £0.10 per unit for spoilage, £50/hour for downtime)
-          let estimatedCost: number | undefined;
-          if (need.issue_type === "Spoilage") {
-            estimatedCost = need.total_impact * 0.10; // £0.10 per unit
-          } else {
-            estimatedCost = (need.total_impact / 60) * 50; // £50 per hour
-          }
+          // TODO: Commented out until accurate cost calculation system is implemented
+          // let estimatedCost: number | undefined;
+          // if (need.issue_type === "Spoilage") {
+          //   estimatedCost = need.total_impact * 0.10; // £0.10 per unit
+          // } else {
+          //   estimatedCost = (need.total_impact / 60) * 50; // £50 per hour
+          // }
+          let estimatedCost: number | undefined = undefined;
 
           // Calculate priority score
           let priorityScore: number | undefined;
@@ -407,14 +409,15 @@ export default function TrainingPage() {
                             : `${Math.round(need.total_impact)} min`}
                         </span>
                       </div>
-                      {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
+                      {/* TODO: Cost display commented out until accurate cost calculation system is implemented */}
+                      {/* {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-600 dark:text-gray-400">Est. Cost:</span>
                           <span className="font-semibold text-red-600 dark:text-red-400">
                             £{need.estimatedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
-                      )}
+                      )} */}
                     </div>
 
                     {trainingRec && (
@@ -639,7 +642,8 @@ export default function TrainingPage() {
                           </div>
                         </div>
 
-                        {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
+                        {/* TODO: Cost display commented out until accurate cost calculation system is implemented */}
+                        {/* {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
                           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Cost Impact</h4>
                             <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
@@ -648,7 +652,7 @@ export default function TrainingPage() {
                               </div>
                             </div>
                           </div>
-                        )}
+                        )} */}
 
                         {trainingRec && (
                           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
