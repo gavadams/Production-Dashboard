@@ -1139,11 +1139,8 @@ function findWorkOrderStartRowIndices(
       continue;
     }
 
-    // Create a unique key for this work order using number, good production, and production start time
-    // This helps distinguish duplicate work orders with the same number and production value
-    const workOrderKey = `${workOrder.work_order_number}_${workOrder.good_production}_${workOrder.production?.start_time || 'null'}`;
-
     // Find the next unprocessed work order row matching this work order
+    // We use a composite key (work order number + good production + production start time) to distinguish duplicates
     let workOrderRowIndex = -1;
     for (let i = 0; i < excelData.length; i++) {
       const row = excelData[i];
