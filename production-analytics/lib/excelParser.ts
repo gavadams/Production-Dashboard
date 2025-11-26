@@ -33,6 +33,11 @@ export interface WorkOrder {
   spoilage_percent: number | null;
   make_ready: WorkOrderTimeRange;
   production: WorkOrderTimeRange;
+  // NEW: Store the actual time values from columns I and L
+  production_total_minutes: number | null;  // Column I (Total Hours) converted to minutes
+  production_logged_downtime: number | null; // Column L (Other Logged Down Time) in minutes
+  make_ready_total_minutes: number | null;   // Column I for Make Ready row (converted to minutes)
+  make_ready_logged_downtime: number | null; // Column L for Make Ready row (in minutes)
 }
 
 export interface WorkOrderWithDetails extends WorkOrder {
@@ -480,6 +485,10 @@ export function parseWorkOrders(
         spoilage_percent: parseNumericValue(colD),
         make_ready: { start_time: null, end_time: null },
         production: { start_time: null, end_time: null },
+        production_total_minutes: null,
+        production_logged_downtime: null,
+        make_ready_total_minutes: null,
+        make_ready_logged_downtime: null,
       };
       currentWorkOrderStartRow = i;
       if (woNumber === 0) {
@@ -504,6 +513,11 @@ export function parseWorkOrders(
           currentWorkOrder.make_ready.start_time = timeRange.start_time;
           currentWorkOrder.make_ready.end_time = timeRange.end_time;
         }
+        // NEW: Extract make ready time values from columns I and L
+        const totalHours = parseNumericValue(row["I"]); // Column I = Total Hours
+        currentWorkOrder.make_ready_total_minutes = totalHours !== null ? totalHours * 60 : null; // Convert hours to minutes
+        currentWorkOrder.make_ready_logged_downtime = parseNumericValue(row["L"]); // Column L = Other Logged Down Time (already in minutes)
+        console.log(`Make Ready for WO ${woNumber}: Total=${currentWorkOrder.make_ready_total_minutes}min, Downtime=${currentWorkOrder.make_ready_logged_downtime}min`);
       }
     } else if (currentWorkOrder && currentWorkOrderStartRow >= 0) {
       // We're in a work order section, look for Make Ready and Production rows
@@ -529,6 +543,13 @@ export function parseWorkOrders(
           currentWorkOrder.production.start_time = timeRange.start_time;
           currentWorkOrder.production.end_time = timeRange.end_time;
         }
+        
+        // CRITICAL: Extract production time values from columns I and L
+        const totalHours = parseNumericValue(row["I"]); // Column I = Total Hours
+        currentWorkOrder.production_total_minutes = totalHours !== null ? totalHours * 60 : null; // Convert hours to minutes
+        currentWorkOrder.production_logged_downtime = parseNumericValue(row["L"]); // Column L = Other Logged Down Time (already in minutes)
+        
+        console.log(`Production for WO ${currentWorkOrder.work_order_number}: Total=${currentWorkOrder.production_total_minutes}min, Downtime=${currentWorkOrder.production_logged_downtime}min`);
       } else if (colFValue.includes("make ready")) {
         // Found Make Ready row - extract times from columns G and H
         const timeRange = extractTimeRange(row);
@@ -543,6 +564,11 @@ export function parseWorkOrders(
           currentWorkOrder.make_ready.start_time = timeRange.start_time;
           currentWorkOrder.make_ready.end_time = timeRange.end_time;
         }
+        // NEW: Extract make ready time values from columns I and L
+        const totalHours = parseNumericValue(row["I"]); // Column I = Total Hours
+        currentWorkOrder.make_ready_total_minutes = totalHours !== null ? totalHours * 60 : null; // Convert hours to minutes
+        currentWorkOrder.make_ready_logged_downtime = parseNumericValue(row["L"]); // Column L = Other Logged Down Time (already in minutes)
+        console.log(`Make Ready for WO ${currentWorkOrder.work_order_number}: Total=${currentWorkOrder.make_ready_total_minutes}min, Downtime=${currentWorkOrder.make_ready_logged_downtime}min`);
       } else if (colFValue.length > 0) {
         // Log any other non-empty values in column F to help debug
         console.log(`Row ${i + 1} has non-empty value in column F but not recognized: "${colF}" (normalized: "${colFValue}")`);
@@ -666,6 +692,10 @@ function completeWorkOrder(workOrder: Partial<WorkOrder>): WorkOrder {
     spoilage_percent: workOrder.spoilage_percent ?? null,
     make_ready: workOrder.make_ready ?? { start_time: null, end_time: null },
     production: workOrder.production ?? { start_time: null, end_time: null },
+    production_total_minutes: workOrder.production_total_minutes ?? null,
+    production_logged_downtime: workOrder.production_logged_downtime ?? null,
+    make_ready_total_minutes: workOrder.make_ready_total_minutes ?? null,
+    make_ready_logged_downtime: workOrder.make_ready_logged_downtime ?? null,
   };
 }
 
@@ -1311,27 +1341,38 @@ export async function parseProductionReport(
         console.warn(`Available shifts:`, shifts.map(s => `${s.shift} (${s.team}) ${s.start_time}-${s.end_time}`));
       }
 
-      // Calculate run speed using ONLY production downtime (not make-ready downtime)
-      // Need production time in minutes and total PRODUCTION downtime in minutes
-      const productionMinutes = timeDifferenceInMinutes(
-        workOrder.production.start_time,
-        workOrder.production.end_time
-      );
-      const totalProductionDowntimeMinutes = downtimeResult.productionDowntime.reduce(
-        (sum, event) => sum + (event.minutes || 0),
-        0
-      );
+      // CRITICAL FIX: Calculate run speed using values from columns I and L
+      // Formula: run_speed = good_production / (production_total_minutes - production_logged_downtime) * 60
+      let run_speed = 0;
 
-      const run_speed =
+      if (
         workOrder.good_production !== null &&
-        productionMinutes !== null &&
-        totalProductionDowntimeMinutes !== null
-          ? calculateRunSpeed(
-              workOrder.good_production,
-              productionMinutes,
-              totalProductionDowntimeMinutes
-            )
-          : 0;
+        workOrder.good_production > 0 &&
+        workOrder.production_total_minutes !== null &&
+        workOrder.production_logged_downtime !== null
+      ) {
+        const actual_running_minutes = workOrder.production_total_minutes - workOrder.production_logged_downtime;
+        
+        if (actual_running_minutes > 0) {
+          run_speed = (workOrder.good_production / actual_running_minutes) * 60;
+          
+          console.log(`Run Speed Calculation for WO ${workOrder.work_order_number}:`, {
+            good_production: workOrder.good_production,
+            production_total_minutes: workOrder.production_total_minutes,
+            production_logged_downtime: workOrder.production_logged_downtime,
+            actual_running_minutes,
+            run_speed: run_speed.toFixed(2)
+          });
+        } else {
+          console.warn(`WO ${workOrder.work_order_number}: Actual running minutes <= 0, setting run speed to 0`);
+        }
+      } else {
+        console.warn(`WO ${workOrder.work_order_number}: Missing data for run speed calculation`, {
+          good_production: workOrder.good_production,
+          production_total_minutes: workOrder.production_total_minutes,
+          production_logged_downtime: workOrder.production_logged_downtime
+        });
+      }
 
       return {
         ...workOrder,
