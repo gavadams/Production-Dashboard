@@ -407,15 +407,14 @@ export default function TrainingPage() {
                             : `${Math.round(need.total_impact)} min`}
                         </span>
                       </div>
-                      {/* Estimated cost display removed - calculation kept for future use */}
-                      {/* {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
+                      {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-600 dark:text-gray-400">Est. Cost:</span>
                           <span className="font-semibold text-red-600 dark:text-red-400">
                             £{need.estimatedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
-                      )} */}
+                      )}
                     </div>
 
                     {trainingRec && (
@@ -640,8 +639,7 @@ export default function TrainingPage() {
                           </div>
                         </div>
 
-                        {/* Cost Impact section removed - calculation kept for future use */}
-                        {/* {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
+                        {need.estimatedCost !== undefined && need.estimatedCost > 0 && (
                           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Cost Impact</h4>
                             <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
@@ -650,7 +648,7 @@ export default function TrainingPage() {
                               </div>
                             </div>
                           </div>
-                        )} */}
+                        )}
 
                         {trainingRec && (
                           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">

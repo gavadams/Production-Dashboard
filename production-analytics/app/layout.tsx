@@ -34,7 +34,7 @@ export default function RootLayout({
         <ErrorBoundary>
           <Navigation />
           <main className="min-h-screen">
-            {children}
+        {children}
           </main>
           <Toaster
             position="top-right"
