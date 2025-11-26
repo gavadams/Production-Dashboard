@@ -1,6 +1,5 @@
 import * as XLSX from "xlsx";
 import { validateFileName } from "./fileValidation";
-import { calculateRunSpeed } from "./calculations";
 
 export interface ExcelParseResult {
   success: boolean;
@@ -1188,36 +1187,6 @@ function findProductionRowIndices(
   }
 
   return productionRowIndices;
-}
-
-/**
- * Converts time difference to minutes
- * 
- * @param startTime - Start time in HH:MM format
- * @param endTime - End time in HH:MM format
- * @returns Difference in minutes, or null if invalid
- */
-function timeDifferenceInMinutes(
-  startTime: string | null,
-  endTime: string | null
-): number | null {
-  if (!startTime || !endTime) {
-    return null;
-  }
-
-  const startMinutes = timeToMinutes(startTime);
-  const endMinutes = timeToMinutes(endTime);
-
-  if (startMinutes === null || endMinutes === null) {
-    return null;
-  }
-
-  // Handle case where end time is next day (e.g., 22:00 to 06:00)
-  if (endMinutes < startMinutes) {
-    return 1440 - startMinutes + endMinutes; // 1440 = minutes in a day
-  }
-
-  return endMinutes - startMinutes;
 }
 
 /**
